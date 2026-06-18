@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -15,6 +16,8 @@ import (
 const sheetName = "Реестр"
 
 const linkSep = "; "
+
+const snapshotKeep = 10
 
 var registryHeaders = []string{
 	"ID анализа",
@@ -36,17 +39,31 @@ var registryHeaders = []string{
 
 type Registry struct {
 	paths Paths
+	file  *excelize.File
 }
 
 func NewRegistry(paths Paths) *Registry {
 	return &Registry{paths: paths}
 }
 
-func (r *Registry) open() (*excelize.File, error) {
-	if _, err := os.Stat(r.paths.Registry()); err == nil {
-		return excelize.OpenFile(r.paths.Registry())
+func (r *Registry) ensureFile() (*excelize.File, error) {
+	if r.file != nil {
+		return r.file, nil
 	}
-	return r.newFile()
+	if _, err := os.Stat(r.paths.Registry()); err == nil {
+		f, err := excelize.OpenFile(r.paths.Registry())
+		if err != nil {
+			return nil, err
+		}
+		r.file = f
+		return f, nil
+	}
+	f, err := r.newFile()
+	if err != nil {
+		return nil, err
+	}
+	r.file = f
+	return f, nil
 }
 
 func (r *Registry) newFile() (*excelize.File, error) {
@@ -126,21 +143,15 @@ func findRow(f *excelize.File, id string) (int, error) {
 }
 
 func (r *Registry) Upsert(a *domain.Analysis) error {
-	if err := r.snapshot(); err != nil {
-		return err
-	}
-	f, err := r.open()
+	f, err := r.ensureFile()
 	if err != nil {
 		return fmt.Errorf("открытие реестра: %w", err)
 	}
-	defer f.Close()
-
 	rowNum, err := findRow(f, a.ID)
 	if err != nil {
 		return err
 	}
 	if rowNum == 0 {
-
 		rows, _ := f.GetRows(sheetName)
 		rowNum = len(rows) + 1
 	}
@@ -149,7 +160,7 @@ func (r *Registry) Upsert(a *domain.Analysis) error {
 	if err := f.SetSheetRow(sheetName, cell, &vals); err != nil {
 		return err
 	}
-	return r.save(f)
+	return r.save()
 }
 
 func (r *Registry) Rebuild(cards []*domain.Analysis) error {
@@ -160,7 +171,6 @@ func (r *Registry) Rebuild(cards []*domain.Analysis) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
 	for i, a := range cards {
 		cell, _ := excelize.CoordinatesToCellName(1, i+2)
 		vals := r.rowValues(a)
@@ -168,13 +178,20 @@ func (r *Registry) Rebuild(cards []*domain.Analysis) error {
 			return err
 		}
 	}
-	return r.save(f)
+	if r.file != nil {
+		r.file.Close()
+	}
+	r.file = f
+	return r.save()
 }
 
-func (r *Registry) save(f *excelize.File) error {
+func (r *Registry) save() error {
+	if r.file == nil {
+		return nil
+	}
 	dir := filepath.Dir(r.paths.Registry())
 	tmp := filepath.Join(dir, fmt.Sprintf(".registry-%d.xlsx", time.Now().UnixNano()))
-	if err := f.SaveAs(tmp); err != nil {
+	if err := r.file.SaveAs(tmp); err != nil {
 		return fmt.Errorf("сохранение реестра: %w", err)
 	}
 	if err := os.Rename(tmp, r.paths.Registry()); err != nil {
@@ -197,7 +214,25 @@ func (r *Registry) snapshot() error {
 		return err
 	}
 	dst := filepath.Join(r.paths.Backups(), "registry-"+time.Now().Format("20060102-150405")+".xlsx")
-	return os.WriteFile(dst, data, 0o644)
+	if err := os.WriteFile(dst, data, 0o644); err != nil {
+		return err
+	}
+	return pruneSnapshots(r.paths.Backups(), snapshotKeep)
+}
+
+func pruneSnapshots(dir string, keep int) error {
+	matches, err := filepath.Glob(filepath.Join(dir, "registry-*.xlsx"))
+	if err != nil {
+		return err
+	}
+	if len(matches) <= keep {
+		return nil
+	}
+	sort.Strings(matches)
+	for _, p := range matches[:len(matches)-keep] {
+		os.Remove(p)
+	}
+	return nil
 }
 
 func (r *Registry) IDs() ([]string, error) {

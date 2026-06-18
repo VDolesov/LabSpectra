@@ -174,6 +174,20 @@ func TestDeleteMovesToTrashAndUpdatesIndex(t *testing.T) {
 	}
 }
 
+func TestUpsertCreatesNoSnapshots(t *testing.T) {
+	root := t.TempDir()
+	svc, _ := New(root)
+	for i := 0; i < 5; i++ {
+		if _, err := svc.Create(CreateInput{Product: "X"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	snaps, _ := filepath.Glob(filepath.Join(root, "backups", "registry-*.xlsx"))
+	if len(snaps) != 0 {
+		t.Errorf("Upsert создал %d снимков реестра, ожидалось 0", len(snaps))
+	}
+}
+
 func TestBackupCreatesZip(t *testing.T) {
 	svc := newTestService(t)
 	svc.Create(CreateInput{Product: "A"})
