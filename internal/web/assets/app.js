@@ -1,0 +1,425 @@
+"use strict";
+
+const state = {
+  meta: { root: "", statuses: [] },
+  items: [],
+  selectedId: null,
+  query: "",
+  status: "",
+  view: "table",
+};
+
+const $ = (sel) => document.querySelector(sel);
+const el = (tag, props = {}, ...kids) => {
+  const n = document.createElement(tag);
+  Object.entries(props).forEach(([k, v]) => {
+    if (k === "class") n.className = v;
+    else if (k === "html") n.innerHTML = v;
+    else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
+    else if (v !== null && v !== undefined) n.setAttribute(k, v);
+  });
+  kids.flat().forEach((c) => n.append(c?.nodeType ? c : document.createTextNode(c ?? "")));
+  return n;
+};
+const baseName = (p) => p.split("/").pop();
+
+function toast(msg, kind = "") {
+  const t = el("div", { class: `toast ${kind}` }, msg);
+  $("#toasts").append(t);
+  setTimeout(() => t.remove(), 3500);
+}
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, opts);
+  const ct = res.headers.get("content-type") || "";
+  const body = ct.includes("json") ? await res.json() : await res.text();
+  if (!res.ok) throw new Error((body && body.error) || `Ошибка ${res.status}`);
+  return body;
+}
+
+const fileURL = (id, rel) => `/files/${encodeURIComponent(id)}/${rel.split("/").map(encodeURIComponent).join("/")}`;
+
+function fmtDay(s) {
+  if (!s) return "—";
+  const p = s.split("-");
+  return p.length === 3 ? `${p[2]}.${p[1]}.${p[0]}` : s;
+}
+function fmtDateTime(s) {
+  if (!s) return "—";
+  const d = new Date(s);
+  if (isNaN(d)) return s;
+  return d.toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+function plural(n) {
+  const m10 = n % 10, m100 = n % 100;
+  if (m10 === 1 && m100 !== 11) return "анализ";
+  if (m10 >= 2 && m10 <= 4 && (m100 < 10 || m100 >= 20)) return "анализа";
+  return "анализов";
+}
+
+async function loadMeta() {
+  state.meta = await api("/api/meta");
+  renderStatusFilters();
+  renderStatusSelect();
+}
+
+async function loadList() {
+  const params = new URLSearchParams();
+  if (state.query) params.set("q", state.query);
+  if (state.status) params.set("status", state.status);
+  const data = await api("/api/analyses?" + params.toString());
+  state.items = data.items || [];
+  render();
+}
+
+function setView(v) {
+  state.view = v;
+  $("#view-table").classList.toggle("hidden", v !== "table");
+  $("#view-cards").classList.toggle("hidden", v !== "cards");
+  document.querySelectorAll(".seg").forEach((b) => b.classList.toggle("active", b.dataset.view === v));
+}
+
+function render() {
+  $("#list-count").textContent = `${state.items.length} ${plural(state.items.length)}`;
+  renderTable();
+  renderSidebar();
+}
+
+function renderStatusFilters() {
+  const wrap = $("#status-filters");
+  wrap.innerHTML = "";
+  const mk = (label, value) =>
+    el("span", {
+      class: "chip" + (state.status === value ? " active" : ""),
+      onclick: () => { state.status = value; renderStatusFilters(); loadList(); },
+    }, label);
+  wrap.append(mk("Все", ""));
+  state.meta.statuses.forEach((s) => wrap.append(mk(s, s)));
+}
+
+function fileIcons(id, list, icon) {
+  if (!list || list.length === 0) return el("span", { class: "muted" }, "—");
+  return el("div", { class: "cell-files" }, ...list.map((rel) =>
+    el("a", { class: "file-link", href: fileURL(id, rel), target: "_blank", title: baseName(rel), onclick: (e) => e.stopPropagation() }, icon)));
+}
+function photoCell(id, list) {
+  if (!list || list.length === 0) return el("span", { class: "muted" }, "—");
+  return el("div", { class: "cell-files" }, ...list.map((rel) =>
+    el("a", { href: fileURL(id, rel), target: "_blank", title: baseName(rel), onclick: (e) => e.stopPropagation() },
+      el("img", { class: "mini-thumb", src: fileURL(id, rel) }))));
+}
+
+function editableCell(item, field, type, displayText, extraClass = "") {
+  const td = el("td", { class: ("editable " + extraClass).trim(), title: "Двойной клик — изменить" }, displayText);
+  td.addEventListener("dblclick", (e) => { e.stopPropagation(); beginEdit(td, item, field, type); });
+  return td;
+}
+
+function statusCell(item) {
+  const td = el("td", { class: "editable", title: "Двойной клик — изменить статус" },
+    el("span", { class: "badge", "data-status": item.status }, item.status));
+  td.addEventListener("dblclick", (e) => { e.stopPropagation(); beginEdit(td, item, "status", "status"); });
+  return td;
+}
+
+function beginEdit(td, item, field, type) {
+  if (td.querySelector("input, select")) return;
+  const current = item[field] || "";
+  let input;
+  if (type === "status") {
+    input = el("select", { class: "cell-edit" },
+      ...state.meta.statuses.map((s) => el("option", s === current ? { value: s, selected: "" } : { value: s }, s)));
+  } else {
+    input = el("input", { class: "cell-edit", type: type === "date" ? "date" : "text", value: current });
+  }
+  td.textContent = "";
+  td.append(input);
+  input.focus();
+  if (input.select) input.select();
+
+  let done = false;
+  const commit = async () => {
+    if (done) return;
+    done = true;
+    const val = input.value;
+    if (val === current) { renderTable(); return; }
+    await saveField(item, field, val);
+  };
+  input.addEventListener("blur", commit);
+  input.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter") { ev.preventDefault(); input.blur(); }
+    else if (ev.key === "Escape") { done = true; renderTable(); }
+  });
+  if (type === "status") input.addEventListener("change", () => input.blur());
+}
+
+async function saveField(item, field, val) {
+  const u = { ...item, [field]: val };
+  const payload = {
+    analysis_date: u.analysis_date || "",
+    product: u.product || "",
+    batch: u.batch || "",
+    sample_name: u.sample_name || "",
+    description: u.description || "",
+    short_result: u.short_result || "",
+    status: u.status || "",
+    comment: u.comment || "",
+  };
+  try {
+    await api("/api/analyses/" + encodeURIComponent(item.id), {
+      method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+    });
+    toast(`${item.id}: сохранено`, "ok");
+    await loadList();
+  } catch (e) { toast(e.message, "err"); renderTable(); }
+}
+
+function renderTable() {
+  const tbody = $("#reg-tbody");
+  tbody.innerHTML = "";
+  if (state.items.length === 0) {
+    tbody.append(el("tr", { class: "empty-row" },
+      el("td", { colspan: "11" }, "Пока нет анализов. Нажмите «＋ Новый анализ», чтобы создать первый.")));
+    return;
+  }
+  state.items.forEach((a) => {
+    const idCell = el("td", { class: "c-id" },
+      el("a", { class: "id-link", href: "#", title: "Открыть карточку", onclick: (e) => { e.preventDefault(); openCard(a.id); } }, a.id));
+    tbody.append(el("tr", { class: "reg-row" },
+      idCell,
+      editableCell(a, "analysis_date", "date", fmtDay(a.analysis_date)),
+      editableCell(a, "product", "text", a.product || "—"),
+      editableCell(a, "batch", "text", a.batch || "—"),
+      editableCell(a, "sample_name", "text", a.sample_name || "—"),
+      editableCell(a, "short_result", "text", a.short_result || "—"),
+      statusCell(a),
+      el("td", {}, fileIcons(a.id, a.attachments.spectra, "📕")),
+      el("td", {}, photoCell(a.id, a.attachments.photos)),
+      el("td", {}, fileIcons(a.id, a.attachments.reports, "📄")),
+      editableCell(a, "comment", "text", a.comment || "—", "c-comment")));
+  });
+}
+
+function renderSidebar() {
+  const list = $("#list");
+  list.innerHTML = "";
+  if (state.items.length === 0) {
+    list.append(el("li", { class: "list-item muted" }, "Ничего не найдено"));
+    return;
+  }
+  state.items.forEach((a) => {
+    list.append(el("li", {
+      class: "list-item" + (a.id === state.selectedId ? " active" : ""),
+      onclick: () => selectAnalysis(a.id),
+    },
+      el("div", { class: "li-top" },
+        el("span", { class: "li-id" }, a.id),
+        el("span", { class: "badge", "data-status": a.status }, a.status)),
+      el("div", { class: "li-title" }, a.sample_name || a.product || "— без названия —"),
+      el("div", { class: "li-meta" }, `${a.product || "—"} · партия ${a.batch || "—"} · ${a.analysis_date || ""}`)));
+  });
+}
+
+function openCard(id) {
+  setView("cards");
+  selectAnalysis(id);
+}
+
+async function selectAnalysis(id) {
+  state.selectedId = id;
+  renderSidebar();
+  const a = await api("/api/analyses/" + encodeURIComponent(id));
+  renderDetail(a);
+}
+
+function field(label, name, value, type = "text") {
+  const input = type === "textarea"
+    ? el("textarea", { name, rows: "2" }, value || "")
+    : el("input", { name, type, value: value || "" });
+  return el("label", {}, label, input);
+}
+
+function renderDetail(a) {
+  const detail = $("#detail");
+  detail.innerHTML = "";
+
+  const statusSel = el("select", { name: "status" },
+    ...state.meta.statuses.map((s) => el("option", s === a.status ? { value: s, selected: "" } : { value: s }, s)));
+
+  const head = el("div", { class: "card-head" },
+    el("div", {},
+      el("div", { class: "card-id" }, a.id),
+      el("div", { class: "card-sub" }, `создан ${fmtDateTime(a.created_at)} · изменён ${fmtDateTime(a.updated_at)}`)),
+    el("div", { class: "card-head-actions" },
+      el("button", { class: "btn del small", onclick: () => deleteAnalysis(a.id) }, "🗑 Удалить"),
+      el("button", { class: "btn ghost small", onclick: () => openFolder(a.id) }, "📂 Открыть папку"),
+      el("button", { class: "btn primary small", onclick: () => saveCard(a.id) }, "💾 Сохранить")));
+
+  const fields = el("div", { class: "section" },
+    el("h3", {}, "Данные анализа"),
+    el("form", { id: "edit-form", class: "form", style: "padding:0" },
+      el("div", { class: "grid2" },
+        field("Дата анализа", "analysis_date", a.analysis_date, "date"),
+        el("label", {}, "Статус", statusSel),
+        field("Продукт", "product", a.product),
+        field("Партия", "batch", a.batch)),
+      field("Название образца", "sample_name", a.sample_name),
+      field("Описание", "description", a.description, "textarea"),
+      field("Краткий результат", "short_result", a.short_result),
+      field("Комментарий", "comment", a.comment, "textarea")));
+
+  const attach = el("div", { class: "section" },
+    el("h3", {}, "Вложения"),
+    attachGroup(a, "Фотографии", "photo", a.attachments.photos, "image/*", true),
+    attachGroup(a, "Спектры", "spectrum", a.attachments.spectra, ".pdf,.txt", false),
+    attachGroup(a, "Отчёты", "report", a.attachments.reports, ".pdf,.docx", false));
+
+  detail.append(el("div", { class: "card-wrap" }, head, fields, attach));
+}
+
+function attachGroup(a, label, kind, list, accept, isImage) {
+  const head = el("div", { class: "attach-head" },
+    el("span", { class: "label" }, `${label} (${(list || []).length})`),
+    el("label", { class: "btn ghost small upload-btn" }, "＋ Добавить",
+      el("input", { type: "file", accept, multiple: "", onchange: (e) => uploadFiles(a.id, kind, e.target.files) })));
+
+  let body;
+  if (!list || list.length === 0) {
+    body = el("div", { class: "muted" }, "пока нет файлов");
+  } else if (isImage) {
+    body = el("div", { class: "thumbs" }, ...list.map((rel) =>
+      el("div", { class: "thumb" },
+        el("img", { src: fileURL(a.id, rel), title: baseName(rel), onclick: () => window.open(fileURL(a.id, rel)) }),
+        el("button", { class: "rm", title: "Удалить", onclick: () => removeAttachment(a.id, kind, rel) }, "✕"))));
+  } else {
+    body = el("div", { class: "files" }, ...list.map((rel) =>
+      el("div", { class: "file-chip" },
+        el("span", { class: "fi-icon" }, rel.endsWith(".pdf") ? "📕" : "📄"),
+        el("a", { href: fileURL(a.id, rel), target: "_blank" }, baseName(rel)),
+        el("button", { class: "rm", title: "Удалить", onclick: () => removeAttachment(a.id, kind, rel) }, "✕"))));
+  }
+  const group = el("div", { class: "attach-group" }, head, body);
+  group.addEventListener("dragover", (e) => { e.preventDefault(); group.classList.add("dragover"); });
+  group.addEventListener("dragleave", () => group.classList.remove("dragover"));
+  group.addEventListener("drop", (e) => {
+    e.preventDefault();
+    group.classList.remove("dragover");
+    if (e.dataTransfer.files && e.dataTransfer.files.length) uploadFiles(a.id, kind, e.dataTransfer.files);
+  });
+  return group;
+}
+
+async function saveCard(id) {
+  const fd = new FormData($("#edit-form"));
+  const payload = Object.fromEntries(fd.entries());
+  try {
+    await api("/api/analyses/" + encodeURIComponent(id), {
+      method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+    });
+    toast("Сохранено", "ok");
+    await loadList();
+    await selectAnalysis(id);
+  } catch (e) { toast(e.message, "err"); }
+}
+
+async function uploadFiles(id, kind, files) {
+  if (!files || files.length === 0) return;
+  const fd = new FormData();
+  for (const f of files) fd.append("files", f);
+  try {
+    await api(`/api/analyses/${encodeURIComponent(id)}/attachments?kind=${kind}`, { method: "POST", body: fd });
+    toast("Файлы добавлены", "ok");
+    await loadList();
+    await selectAnalysis(id);
+  } catch (e) { toast(e.message, "err"); }
+}
+
+async function removeAttachment(id, kind, rel) {
+  if (!confirm("Удалить файл? Он переедет в .trash.")) return;
+  try {
+    await api(`/api/analyses/${encodeURIComponent(id)}/attachments?kind=${kind}&name=${encodeURIComponent(rel)}`, { method: "DELETE" });
+    toast("Файл удалён", "ok");
+    await loadList();
+    await selectAnalysis(id);
+  } catch (e) { toast(e.message, "err"); }
+}
+
+async function openFolder(id) {
+  try { await api(`/api/analyses/${encodeURIComponent(id)}/open-folder`, { method: "POST" }); }
+  catch (e) { toast(e.message, "err"); }
+}
+
+async function deleteAnalysis(id) {
+  if (!confirm(`Удалить анализ ${id}?\nПапка переедет в .trash, строка из реестра будет убрана.`)) return;
+  try {
+    await api("/api/analyses/" + encodeURIComponent(id), { method: "DELETE" });
+    toast(`Анализ ${id} удалён`, "ok");
+    state.selectedId = null;
+    setView("table");
+    await loadList();
+  } catch (e) { toast(e.message, "err"); }
+}
+
+function renderStatusSelect() {
+  const sel = $("#create-status");
+  sel.innerHTML = "";
+  state.meta.statuses.forEach((s) => sel.append(el("option", { value: s }, s)));
+}
+function openModal() { $("#create-form").reset(); $("#modal").classList.remove("hidden"); }
+function closeModal() { $("#modal").classList.add("hidden"); }
+
+async function submitCreate(e) {
+  e.preventDefault();
+  const payload = Object.fromEntries(new FormData(e.target).entries());
+  try {
+    const a = await api("/api/analyses", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+    });
+    toast(`Создан анализ ${a.id}`, "ok");
+    closeModal();
+    state.selectedId = a.id;
+    await loadList();
+    openCard(a.id);
+  } catch (err) { toast(err.message, "err"); }
+}
+
+async function rebuildRegistry() {
+  if (!confirm("Пересобрать registry.xlsx из карточек card.json?")) return;
+  try {
+    const r = await api("/api/registry/rebuild", { method: "POST" });
+    toast(`Реестр пересобран: ${r.rebuilt} строк`, "ok");
+  } catch (e) { toast(e.message, "err"); }
+}
+
+async function openRegistry() {
+  try {
+    await api("/api/registry/open", { method: "POST" });
+    toast("Открываю registry.xlsx…", "ok");
+  } catch (e) { toast(e.message, "err"); }
+}
+
+async function backup() {
+  try {
+    await api("/api/backup", { method: "POST" });
+    toast("Резервная копия создана в backups/", "ok");
+  } catch (e) { toast(e.message, "err"); }
+}
+
+function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
+
+function init() {
+  document.querySelectorAll(".seg").forEach((b) => b.addEventListener("click", () => setView(b.dataset.view)));
+  $("#btn-new").addEventListener("click", openModal);
+  $("#modal-close").addEventListener("click", closeModal);
+  $("#create-cancel").addEventListener("click", closeModal);
+  $("#create-form").addEventListener("submit", submitCreate);
+  $("#btn-rebuild").addEventListener("click", rebuildRegistry);
+  $("#btn-open-xlsx").addEventListener("click", openRegistry);
+  $("#btn-backup").addEventListener("click", backup);
+  $("#modal").addEventListener("click", (e) => { if (e.target.id === "modal") closeModal(); });
+  $("#search").addEventListener("input", debounce((e) => { state.query = e.target.value.trim(); loadList(); }, 250));
+
+  loadMeta().then(loadList).catch((e) => toast(e.message, "err"));
+}
+
+document.addEventListener("DOMContentLoaded", init);

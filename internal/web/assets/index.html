@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LabSpectra — учёт анализов</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">🧪</span>
+      <div>
+        <div class="brand-title">LabSpectra</div>
+        <div class="brand-sub">учёт ИК-спектров, фото и отчётов</div>
+      </div>
+    </div>
+    <div class="topbar-actions">
+      <button id="btn-backup" class="btn ghost" title="Создать zip-резервную копию данных">💾 Бэкап</button>
+      <button id="btn-open-xlsx" class="btn ghost" title="Открыть registry.xlsx в Excel">📊 Открыть Excel</button>
+      <button id="btn-rebuild" class="btn ghost" title="Пересобрать registry.xlsx из карточек">↻ Пересобрать реестр</button>
+      <button id="btn-new" class="btn primary">＋ Новый анализ</button>
+    </div>
+  </header>
+
+  <nav class="toolbar">
+    <div class="view-toggle">
+      <button class="seg active" data-view="table">▦ Таблица</button>
+      <button class="seg" data-view="cards">🗂 Карточка</button>
+    </div>
+    <input id="search" type="search" placeholder="Поиск: номер опыта, продукт, партия, образец…" autocomplete="off" />
+    <div id="status-filters" class="filters"></div>
+    <span id="list-count" class="count">0 анализов</span>
+  </nav>
+
+  <main class="main">
+    <section id="view-table" class="view">
+      <div class="table-hint">✎ Двойной клик по ячейке — изменить значение. Клик по ID — открыть карточку с файлами.</div>
+      <table id="reg-table">
+        <thead>
+          <tr>
+            <th>ID опыта</th>
+            <th>Дата</th>
+            <th>Продукт</th>
+            <th>Партия</th>
+            <th>Образец</th>
+            <th>Результат анализа</th>
+            <th>Статус</th>
+            <th>Спектры</th>
+            <th>Фото</th>
+            <th>Отчёты</th>
+            <th>Комментарий</th>
+          </tr>
+        </thead>
+        <tbody id="reg-tbody"></tbody>
+      </table>
+    </section>
+
+    <section id="view-cards" class="view hidden">
+      <div class="layout">
+        <aside class="sidebar">
+          <ul id="list" class="list"></ul>
+        </aside>
+        <section id="detail" class="detail">
+          <div class="empty-state">
+            <div class="empty-icon">📂</div>
+            <p>Выберите анализ в списке или в таблице.</p>
+          </div>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <div id="modal" class="modal-backdrop hidden">
+    <div class="modal">
+      <div class="modal-head">
+        <h2>Новый анализ</h2>
+        <button class="icon-btn" id="modal-close">✕</button>
+      </div>
+      <form id="create-form" class="form">
+        <div class="grid2">
+          <label>Дата анализа<input type="date" name="analysis_date" /></label>
+          <label>Статус
+            <select name="status" id="create-status"></select>
+          </label>
+          <label>Продукт<input type="text" name="product" placeholder="Например, Продукт А" /></label>
+          <label>Партия<input type="text" name="batch" placeholder="123" /></label>
+        </div>
+        <label>Название образца<input type="text" name="sample_name" placeholder="Образец 1" /></label>
+        <label>Описание<textarea name="description" rows="2"></textarea></label>
+        <label>Краткий результат<input type="text" name="short_result" placeholder="Соответствует" /></label>
+        <label>Комментарий<textarea name="comment" rows="2"></textarea></label>
+        <div class="form-actions">
+          <button type="button" class="btn ghost" id="create-cancel">Отмена</button>
+          <button type="submit" class="btn primary">Создать анализ</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="toasts" class="toasts"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
