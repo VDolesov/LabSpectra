@@ -24,6 +24,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("инициализация LabSpectra: %v", err)
 	}
+	defer svc.Close()
 
 	srv, err := httpapi.New(svc)
 	if err != nil {

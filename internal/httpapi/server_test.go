@@ -14,6 +14,7 @@ func newTestHandler(t *testing.T) http.Handler {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { svc.Close() })
 	srv, err := New(svc)
 	if err != nil {
 		t.Fatal(err)

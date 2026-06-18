@@ -19,10 +19,11 @@ import (
 )
 
 type Service struct {
-	fs  *storage.FileStore
-	reg *storage.Registry
-	ix  *index.Index
-	mu  sync.Mutex
+	fs   *storage.FileStore
+	reg  *storage.Registry
+	ix   *index.Index
+	lock *storage.Lock
+	mu   sync.Mutex
 }
 
 func New(root string) (*Service, error) {
@@ -30,14 +31,20 @@ func New(root string) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
+	lock, err := storage.AcquireLock(fs.Paths.Lock())
+	if err != nil {
+		return nil, err
+	}
 	s := &Service{
-		fs:  fs,
-		reg: storage.NewRegistry(fs.Paths),
-		ix:  index.New(),
+		fs:   fs,
+		reg:  storage.NewRegistry(fs.Paths),
+		ix:   index.New(),
+		lock: lock,
 	}
 
 	cards, broken, err := fs.ReadAllCards()
 	if err != nil {
+		lock.Release()
 		return nil, err
 	}
 	for id, e := range broken {
@@ -46,9 +53,14 @@ func New(root string) (*Service, error) {
 	s.ix.Load(cards)
 
 	if err := s.reconcile(); err != nil {
+		lock.Release()
 		return nil, err
 	}
 	return s, nil
+}
+
+func (s *Service) Close() error {
+	return s.lock.Release()
 }
 
 func (s *Service) Root() string { return s.fs.Paths.Root }

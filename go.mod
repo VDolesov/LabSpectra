@@ -2,7 +2,10 @@ module labspectra
 
 go 1.26.4
 
-require github.com/xuri/excelize/v2 v2.10.1
+require (
+	github.com/xuri/excelize/v2 v2.10.1
+	golang.org/x/sys v0.41.0
+)
 
 require (
 	github.com/richardlehane/mscfb v1.0.6 // indirect

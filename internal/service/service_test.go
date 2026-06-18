@@ -17,6 +17,7 @@ func newTestService(t *testing.T) *Service {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
+	t.Cleanup(func() { svc.Close() })
 	return svc
 }
 
@@ -116,11 +117,13 @@ func TestRecoverFromCorruptedRegistry(t *testing.T) {
 	if err := os.WriteFile(regPath, []byte("это не xlsx"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	svc.Close()
 
 	svc2, err := New(root)
 	if err != nil {
 		t.Fatalf("New на повреждённом реестре: %v", err)
 	}
+	defer svc2.Close()
 	if !svc2.reg.Healthy() {
 		t.Fatal("реестр не восстановлен")
 	}
@@ -152,6 +155,7 @@ func TestRebuildRegistry(t *testing.T) {
 func TestDeleteMovesToTrashAndUpdatesIndex(t *testing.T) {
 	root := t.TempDir()
 	svc, _ := New(root)
+	defer svc.Close()
 	a1, _ := svc.Create(CreateInput{Product: "A"})
 	svc.Create(CreateInput{Product: "B"})
 
@@ -177,6 +181,7 @@ func TestDeleteMovesToTrashAndUpdatesIndex(t *testing.T) {
 func TestUpsertCreatesNoSnapshots(t *testing.T) {
 	root := t.TempDir()
 	svc, _ := New(root)
+	defer svc.Close()
 	for i := 0; i < 5; i++ {
 		if _, err := svc.Create(CreateInput{Product: "X"}); err != nil {
 			t.Fatal(err)
@@ -238,11 +243,13 @@ func TestReconcileRebuildsOnOrphanRow(t *testing.T) {
 	if err := os.RemoveAll(filepath.Join(root, "samples", b.ID)); err != nil {
 		t.Fatal(err)
 	}
+	svc.Close()
 
 	svc2, err := New(root)
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer svc2.Close()
 	if len(svc2.List("", "")) != 1 {
 		t.Errorf("в индексе %d анализов, ожидался 1", len(svc2.List("", "")))
 	}
