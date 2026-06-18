@@ -1,12 +1,15 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"os/exec"
+	"os/signal"
 	"runtime"
 	"time"
 
@@ -56,9 +59,22 @@ func main() {
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
-	if err := httpServer.Serve(ln); err != nil && err != http.ErrServerClosed {
-		log.Fatalf("сервер остановлен с ошибкой: %v", err)
-	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
+	go func() {
+		if err := httpServer.Serve(ln); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("сервер остановлен с ошибкой: %v", err)
+		}
+	}()
+
+	<-ctx.Done()
+	stop()
+	fmt.Println("  Завершение…")
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	httpServer.Shutdown(shutdownCtx)
 }
 
 func openBrowser(url string) {
