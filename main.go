@@ -51,7 +51,11 @@ func main() {
 		}()
 	}
 
-	httpServer := &http.Server{Handler: srv.Handler()}
+	httpServer := &http.Server{
+		Handler:           srv.Handler(),
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
 	if err := httpServer.Serve(ln); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("сервер остановлен с ошибкой: %v", err)
 	}
