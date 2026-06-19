@@ -3,7 +3,7 @@ package service
 import (
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,11 +19,12 @@ import (
 )
 
 type Service struct {
-	fs   *storage.FileStore
-	reg  *storage.Registry
-	ix   *index.Index
-	lock *storage.Lock
-	mu   sync.Mutex
+	fs      *storage.FileStore
+	reg     *storage.Registry
+	ix      *index.Index
+	lock    *storage.Lock
+	logFile *os.File
+	mu      sync.Mutex
 }
 
 func New(root string) (*Service, error) {
@@ -31,36 +32,51 @@ func New(root string) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	lock, err := storage.AcquireLock(fs.Paths.Lock())
+	logFile, err := os.OpenFile(filepath.Join(fs.Paths.Logs(), "app.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
 		return nil, err
 	}
+	slog.SetDefault(slog.New(slog.NewTextHandler(logFile, &slog.HandlerOptions{Level: slog.LevelInfo})))
+
+	lock, err := storage.AcquireLock(fs.Paths.Lock())
+	if err != nil {
+		logFile.Close()
+		return nil, err
+	}
 	s := &Service{
-		fs:   fs,
-		reg:  storage.NewRegistry(fs.Paths),
-		ix:   index.New(),
-		lock: lock,
+		fs:      fs,
+		reg:     storage.NewRegistry(fs.Paths),
+		ix:      index.New(),
+		lock:    lock,
+		logFile: logFile,
 	}
 
 	cards, broken, err := fs.ReadAllCards()
 	if err != nil {
 		lock.Release()
+		logFile.Close()
 		return nil, err
 	}
 	for id, e := range broken {
-		log.Printf("LabSpectra: повреждённая карточка %s пропущена: %v", id, e)
+		slog.Warn("повреждённая карточка пропущена", "id", id, "err", e)
 	}
 	s.ix.Load(cards)
 
 	if err := s.reconcile(); err != nil {
 		lock.Release()
+		logFile.Close()
 		return nil, err
 	}
+	slog.Info("запуск", "data", fs.Paths.Root, "count", len(cards))
 	return s, nil
 }
 
 func (s *Service) Close() error {
-	return s.lock.Release()
+	err := s.lock.Release()
+	if s.logFile != nil {
+		s.logFile.Close()
+	}
+	return err
 }
 
 func (s *Service) Root() string { return s.fs.Paths.Root }
@@ -127,6 +143,7 @@ func (s *Service) Create(in CreateInput) (*domain.Analysis, error) {
 		return nil, err
 	}
 	s.ix.Put(a)
+	slog.Info("создан анализ", "id", a.ID)
 	return a, nil
 }
 
@@ -175,6 +192,7 @@ func (s *Service) Update(id string, in UpdateInput) (*domain.Analysis, error) {
 	if err := s.persist(a); err != nil {
 		return nil, err
 	}
+	slog.Info("изменён анализ", "id", a.ID)
 	return a, nil
 }
 
@@ -198,6 +216,7 @@ func (s *Service) AddAttachment(id string, kind domain.Kind, origName string, sr
 	if err := s.persist(a); err != nil {
 		return nil, err
 	}
+	slog.Info("добавлено вложение", "id", id, "kind", string(kind), "file", rel)
 	return a, nil
 }
 
@@ -227,6 +246,7 @@ func (s *Service) RemoveAttachment(id string, kind domain.Kind, rel string) (*do
 	if err := s.persist(a); err != nil {
 		return nil, err
 	}
+	slog.Info("удалено вложение", "id", id, "kind", string(kind), "file", rel)
 	return a, nil
 }
 
@@ -241,6 +261,7 @@ func (s *Service) Delete(id string) error {
 		return err
 	}
 	s.ix.Delete(id)
+	slog.Info("удалён анализ", "id", id)
 	return s.rebuildRegistryLocked()
 }
 
