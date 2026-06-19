@@ -40,6 +40,7 @@ var registryHeaders = []string{
 type Registry struct {
 	paths Paths
 	file  *excelize.File
+	mtime time.Time
 }
 
 func NewRegistry(paths Paths) *Registry {
@@ -48,7 +49,11 @@ func NewRegistry(paths Paths) *Registry {
 
 func (r *Registry) ensureFile() (*excelize.File, error) {
 	if r.file != nil {
-		return r.file, nil
+		if fi, err := os.Stat(r.paths.Registry()); err == nil && fi.ModTime().Equal(r.mtime) {
+			return r.file, nil
+		}
+		r.file.Close()
+		r.file = nil
 	}
 	if _, err := os.Stat(r.paths.Registry()); err == nil {
 		f, err := excelize.OpenFile(r.paths.Registry())
@@ -56,6 +61,7 @@ func (r *Registry) ensureFile() (*excelize.File, error) {
 			return nil, err
 		}
 		r.file = f
+		r.recordMtime()
 		return f, nil
 	}
 	f, err := r.newFile()
@@ -64,6 +70,12 @@ func (r *Registry) ensureFile() (*excelize.File, error) {
 	}
 	r.file = f
 	return f, nil
+}
+
+func (r *Registry) recordMtime() {
+	if fi, err := os.Stat(r.paths.Registry()); err == nil {
+		r.mtime = fi.ModTime()
+	}
 }
 
 func (r *Registry) newFile() (*excelize.File, error) {
@@ -198,6 +210,7 @@ func (r *Registry) save() error {
 		os.Remove(tmp)
 		return fmt.Errorf("не удалось обновить registry.xlsx (возможно, файл открыт в Excel — закройте его): %w", err)
 	}
+	r.recordMtime()
 	return nil
 }
 
