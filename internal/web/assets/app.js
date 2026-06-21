@@ -204,6 +204,7 @@ async function saveField(item, field, val) {
     origin: u.origin || "",
     source: u.source || "",
     batch: u.batch || "",
+    operator: u.operator || "",
     sample_name: u.sample_name || "",
     description: u.description || "",
     short_result: u.short_result || "",
@@ -265,7 +266,7 @@ function renderTable() {
       editableCell(a, "sample_name", "text", a.sample_name || "—"),
       editableCell(a, "short_result", "text", a.short_result || "—"),
       statusCell(a),
-      el("td", {}, fileIcons(a.id, a.attachments.spectra, "📕")),
+      editableCell(a, "operator", "text", a.operator || "—"),
       el("td", {}, photoCell(a.id, a.attachments.photos)),
       editableCell(a, "comment", "text", a.comment || "—", "c-comment")));
   });
@@ -350,7 +351,8 @@ function renderDetail(a) {
         manufacturer.selLabel,
         manufacturer.srcLabel,
         el("label", {}, "Происхождение", sourceSel),
-        field("Партия", "batch", a.batch)),
+        field("Партия", "batch", a.batch),
+        field("Оператор", "operator", a.operator)),
       field("Дополнительно", "sample_name", a.sample_name),
       field("Описание", "description", a.description, "textarea"),
       field("Краткий результат", "short_result", a.short_result),
@@ -358,8 +360,7 @@ function renderDetail(a) {
 
   const attach = el("div", { class: "section" },
     el("h3", {}, "Вложения"),
-    attachGroup(a, "Фотографии", "photo", a.attachments.photos, "image/*", true),
-    attachGroup(a, "Спектры", "spectrum", a.attachments.spectra, ".pdf,.txt", false));
+    attachGroup(a, "Фотографии", "photo", a.attachments.photos, "image/*", true));
 
   detail.append(el("div", { class: "card-wrap" }, head, fields, attach));
 }

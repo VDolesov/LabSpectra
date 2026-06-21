@@ -114,6 +114,7 @@ type Analysis struct {
 	Origin        string      `json:"origin"`
 	Source        string      `json:"source"`
 	Batch         string      `json:"batch"`
+	Operator      string      `json:"operator"`
 	SampleName    string      `json:"sample_name"`
 	Description   string      `json:"description"`
 	ShortResult   string      `json:"short_result"`
