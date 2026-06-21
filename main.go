@@ -18,8 +18,8 @@ import (
 )
 
 func main() {
-	dataDir := flag.String("data", "lab_data", "путь к папке данных lab_data")
-	addr := flag.String("addr", "127.0.0.1:8765", "адрес локального веб-сервера")
+	dataDir := flag.String("data", env("DATA_DIR", "lab_data"), "путь к папке данных lab_data")
+	addr := flag.String("addr", defaultAddr(), "адрес веб-сервера")
 	noOpen := flag.Bool("no-open", false, "не открывать браузер автоматически")
 	flag.Parse()
 
@@ -75,6 +75,20 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	httpServer.Shutdown(shutdownCtx)
+}
+
+func env(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
+}
+
+func defaultAddr() string {
+	if p := os.Getenv("PORT"); p != "" {
+		return "0.0.0.0:" + p
+	}
+	return "127.0.0.1:8765"
 }
 
 func openBrowser(url string) {
