@@ -114,8 +114,16 @@ function fileIcons(id, list, icon) {
 function photoCell(id, list) {
   if (!list || list.length === 0) return el("span", { class: "muted" }, "—");
   return el("div", { class: "cell-files" }, ...list.map((rel) =>
-    el("a", { href: fileURL(id, rel), target: "_blank", title: baseName(rel), onclick: (e) => e.stopPropagation() },
-      el("img", { class: "mini-thumb", src: fileURL(id, rel) }))));
+    el("img", { class: "mini-thumb", src: fileURL(id, rel), title: baseName(rel), onclick: (e) => { e.stopPropagation(); openLightbox(fileURL(id, rel)); } })));
+}
+
+function openLightbox(url) {
+  $("#lightbox-img").src = url;
+  $("#lightbox").classList.remove("hidden");
+}
+function closeLightbox() {
+  $("#lightbox").classList.add("hidden");
+  $("#lightbox-img").src = "";
 }
 
 function editableCell(item, field, type, displayText, extraClass = "") {
@@ -312,7 +320,7 @@ function attachGroup(a, label, kind, list, accept, isImage) {
   } else if (isImage) {
     body = el("div", { class: "thumbs" }, ...list.map((rel) =>
       el("div", { class: "thumb" },
-        el("img", { src: fileURL(a.id, rel), title: baseName(rel), onclick: () => window.open(fileURL(a.id, rel)) }),
+        el("img", { src: fileURL(a.id, rel), title: baseName(rel), onclick: () => openLightbox(fileURL(a.id, rel)) }),
         el("button", { class: "rm", title: "Удалить", onclick: () => removeAttachment(a.id, kind, rel) }, "✕"))));
   } else {
     body = el("div", { class: "files" }, ...list.map((rel) =>
@@ -483,6 +491,8 @@ function init() {
   $("#btn-open-xlsx").addEventListener("click", openRegistry);
   $("#btn-backup").addEventListener("click", backup);
   $("#modal").addEventListener("click", (e) => { if (e.target.id === "modal") closeModal(); });
+  $("#lightbox").addEventListener("click", closeLightbox);
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeLightbox(); });
   $("#search").addEventListener("input", debounce((e) => { state.query = e.target.value.trim(); loadList(); }, 250));
 
   const bindDate = (sel, key) => $(sel).addEventListener("change", (e) => { state.dates[key] = e.target.value; loadList(); });
