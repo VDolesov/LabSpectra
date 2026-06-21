@@ -102,6 +102,7 @@ type Analysis struct {
 	CreatedAt     string      `json:"created_at"`
 	UpdatedAt     string      `json:"updated_at"`
 	Committed     bool        `json:"committed"`
+	Deleted       bool        `json:"deleted"`
 }
 
 func (a *Analysis) Clone() *Analysis {

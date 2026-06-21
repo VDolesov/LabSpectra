@@ -16,6 +16,7 @@
       </div>
     </div>
     <div class="topbar-actions">
+      <button id="btn-admin" class="btn ghost" title="Режим администратора (подтверждение удалений)">🛡 Управление</button>
       <button id="btn-backup" class="btn ghost" title="Создать zip-резервную копию данных">💾 Бэкап</button>
       <button id="btn-open-xlsx" class="btn ghost" title="Открыть registry.xlsx в Excel">📊 Открыть Excel</button>
       <button id="btn-rebuild" class="btn ghost" title="Пересобрать registry.xlsx из карточек">↻ Пересобрать реестр</button>
@@ -105,6 +106,16 @@
           <button type="submit" class="btn primary">Создать анализ</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <div id="admin-modal" class="modal-backdrop hidden">
+    <div class="modal">
+      <div class="modal-head">
+        <h2>Недавно удалённые</h2>
+        <button class="icon-btn" id="admin-close">✕</button>
+      </div>
+      <div id="admin-body" class="admin-body"></div>
     </div>
   </div>
 

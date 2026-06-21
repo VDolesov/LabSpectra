@@ -161,8 +161,8 @@ func TestDeleteMovesToTrashAndUpdatesIndex(t *testing.T) {
 	a1, _ := svc.Create(CreateInput{Product: "R2531"})
 	svc.Create(CreateInput{Product: "V00S9"})
 
-	if err := svc.Delete(a1.ID); err != nil {
-		t.Fatalf("Delete: %v", err)
+	if err := svc.Purge(a1.ID); err != nil {
+		t.Fatalf("Purge: %v", err)
 	}
 	if len(svc.List(Filter{})) != 1 {
 		t.Errorf("после удаления осталось %d анализов, ожидался 1", len(svc.List(Filter{})))
@@ -323,6 +323,46 @@ func TestReconcileRebuildsOnSchemaChange(t *testing.T) {
 	}
 	if len(svc2.List(Filter{})) != 1 {
 		t.Error("данные потеряны при пересборке схемы")
+	}
+}
+
+func TestSoftDeleteAndRestore(t *testing.T) {
+	svc := newTestService(t)
+	a, _ := svc.Create(CreateInput{Product: "R2531"})
+	svc.Create(CreateInput{Product: "V00S9"})
+
+	if err := svc.SoftDelete(a.ID); err != nil {
+		t.Fatal(err)
+	}
+	if len(svc.List(Filter{})) != 1 {
+		t.Errorf("после мягкого удаления в списке %d, ожидался 1", len(svc.List(Filter{})))
+	}
+	if len(svc.ListDeleted()) != 1 || svc.ListDeleted()[0].ID != a.ID {
+		t.Errorf("удалённый не попал в список недавно удалённых")
+	}
+	ids, _ := svc.reg.IDs()
+	if len(ids) != 1 {
+		t.Errorf("в реестре %d строк, ожидалась 1 (удалённый исключён)", len(ids))
+	}
+
+	if err := svc.Restore(a.ID); err != nil {
+		t.Fatal(err)
+	}
+	if len(svc.List(Filter{})) != 2 {
+		t.Errorf("после восстановления в списке %d, ожидалось 2", len(svc.List(Filter{})))
+	}
+	if len(svc.ListDeleted()) != 0 {
+		t.Errorf("после восстановления список удалённых не пуст")
+	}
+}
+
+func TestCheckAdmin(t *testing.T) {
+	svc := newTestService(t)
+	if !svc.CheckAdmin("123") {
+		t.Error("верный пароль отклонён")
+	}
+	if svc.CheckAdmin("000") || svc.CheckAdmin("") {
+		t.Error("неверный/пустой пароль принят")
 	}
 }
 

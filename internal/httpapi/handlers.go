@@ -87,7 +87,52 @@ func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if err := s.svc.Delete(id); err != nil {
+	if err := s.svc.SoftDelete(id); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) requireAdmin(w http.ResponseWriter, r *http.Request) bool {
+	if !s.svc.CheckAdmin(r.Header.Get("X-Admin-Password")) {
+		writeErr(w, http.StatusUnauthorized, "требуется пароль администратора")
+		return false
+	}
+	return true
+}
+
+func (s *Server) handleAdminVerify(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleAdminDeleted(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	list := s.svc.ListDeleted()
+	writeJSON(w, http.StatusOK, map[string]interface{}{"items": list, "count": len(list)})
+}
+
+func (s *Server) handleAdminRestore(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	if err := s.svc.Restore(r.PathValue("id")); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleAdminPurge(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	if err := s.svc.Purge(r.PathValue("id")); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}

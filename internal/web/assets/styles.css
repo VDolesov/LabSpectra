@@ -201,6 +201,9 @@ body {
 .modal { background: var(--panel); border-radius: var(--radius); width: 560px; max-width: 100%; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(20,30,50,.3); }
 .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 18px 20px; border-bottom: 1px solid var(--line); }
 .modal-head h2 { margin: 0; font-size: 18px; }
+.admin-body { padding: 16px 20px; display: flex; flex-direction: column; gap: 10px; max-height: 60vh; overflow-y: auto; }
+.admin-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: #fbfcfe; }
+.admin-row-actions { display: flex; gap: 8px; flex-shrink: 0; }
 .form { padding: 20px; display: grid; gap: 14px; }
 .form-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 6px; }
 

@@ -82,6 +82,11 @@ func (s *Server) routes() error {
 	s.mux.HandleFunc("POST /api/registry/open", s.handleOpenRegistry)
 	s.mux.HandleFunc("POST /api/backup", s.handleBackup)
 
+	s.mux.HandleFunc("POST /api/admin/verify", s.handleAdminVerify)
+	s.mux.HandleFunc("GET /api/admin/deleted", s.handleAdminDeleted)
+	s.mux.HandleFunc("POST /api/admin/analyses/{id}/restore", s.handleAdminRestore)
+	s.mux.HandleFunc("DELETE /api/admin/analyses/{id}", s.handleAdminPurge)
+
 	s.mux.HandleFunc("GET /files/{id}/{path...}", s.handleServeFile)
 
 	assets, err := fs.Sub(web.FS, "assets")

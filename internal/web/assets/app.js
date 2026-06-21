@@ -8,6 +8,7 @@ const state = {
   status: "",
   dates: { aFrom: "", aTo: "", sFrom: "", sTo: "" },
   sort: { key: "", dir: 1 },
+  admin: "",
   view: "table",
 };
 
@@ -407,12 +408,71 @@ async function openFolder(id) {
 }
 
 async function deleteAnalysis(id) {
-  if (!confirm(`Удалить анализ ${id}?\nПапка переедет в .trash, строка из реестра будет убрана.`)) return;
+  if (!confirm(`Удалить анализ ${id}?\nОн скроется из списка и попадёт администратору на подтверждение.`)) return;
   try {
     await api("/api/analyses/" + encodeURIComponent(id), { method: "DELETE" });
-    toast(`Анализ ${id} удалён`, "ok");
+    toast(`${id} отправлен на удаление`, "ok");
     state.selectedId = null;
     setView("table");
+    await loadList();
+  } catch (e) { toast(e.message, "err"); }
+}
+
+const adminHdr = () => ({ "X-Admin-Password": state.admin });
+
+async function enterAdmin() {
+  if (!state.admin) {
+    const pw = prompt("Пароль администратора:");
+    if (!pw) return;
+    try {
+      await api("/api/admin/verify", { method: "POST", headers: { "X-Admin-Password": pw } });
+      state.admin = pw;
+      toast("Режим администратора включён", "ok");
+    } catch (e) { toast("Неверный пароль", "err"); return; }
+  }
+  $("#admin-modal").classList.remove("hidden");
+  await renderAdminDeleted();
+}
+
+function closeAdmin() { $("#admin-modal").classList.add("hidden"); }
+
+async function renderAdminDeleted() {
+  const body = $("#admin-body");
+  body.innerHTML = "";
+  let data;
+  try { data = await api("/api/admin/deleted", { headers: adminHdr() }); }
+  catch (e) { toast(e.message, "err"); return; }
+  const items = data.items || [];
+  if (items.length === 0) {
+    body.append(el("div", { class: "muted" }, "Нет анализов, ожидающих подтверждения удаления."));
+    return;
+  }
+  items.forEach((a) => {
+    body.append(el("div", { class: "admin-row" },
+      el("div", {},
+        el("div", { class: "li-id" }, a.id),
+        el("div", { class: "li-meta" }, `${a.product || "—"} · партия ${a.batch || "—"} · ${a.analysis_date || ""}`)),
+      el("div", { class: "admin-row-actions" },
+        el("button", { class: "btn ghost small", onclick: () => adminRestore(a.id) }, "↩ Восстановить"),
+        el("button", { class: "btn del small", onclick: () => adminPurge(a.id) }, "🗑 Удалить навсегда"))));
+  });
+}
+
+async function adminRestore(id) {
+  try {
+    await api(`/api/admin/analyses/${encodeURIComponent(id)}/restore`, { method: "POST", headers: adminHdr() });
+    toast(`${id} восстановлен`, "ok");
+    await renderAdminDeleted();
+    await loadList();
+  } catch (e) { toast(e.message, "err"); }
+}
+
+async function adminPurge(id) {
+  if (!confirm(`Удалить ${id} НАВСЕГДА? Папка уедет в .trash.`)) return;
+  try {
+    await api(`/api/admin/analyses/${encodeURIComponent(id)}`, { method: "DELETE", headers: adminHdr() });
+    toast(`${id} удалён навсегда`, "ok");
+    await renderAdminDeleted();
     await loadList();
   } catch (e) { toast(e.message, "err"); }
 }
@@ -515,6 +575,9 @@ function init() {
   $("#btn-rebuild").addEventListener("click", rebuildRegistry);
   $("#btn-open-xlsx").addEventListener("click", openRegistry);
   $("#btn-backup").addEventListener("click", backup);
+  $("#btn-admin").addEventListener("click", enterAdmin);
+  $("#admin-close").addEventListener("click", closeAdmin);
+  $("#admin-modal").addEventListener("click", (e) => { if (e.target.id === "admin-modal") closeAdmin(); });
   $("#modal").addEventListener("click", (e) => { if (e.target.id === "modal") closeModal(); });
   $("#lightbox").addEventListener("click", closeLightbox);
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeLightbox(); });

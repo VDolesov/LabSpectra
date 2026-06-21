@@ -19,12 +19,24 @@ import (
 )
 
 type Service struct {
-	fs      *storage.FileStore
-	reg     *storage.Registry
-	ix      *index.Index
-	lock    *storage.Lock
-	logFile *os.File
-	mu      sync.Mutex
+	fs            *storage.FileStore
+	reg           *storage.Registry
+	ix            *index.Index
+	lock          *storage.Lock
+	logFile       *os.File
+	adminPassword string
+	mu            sync.Mutex
+}
+
+func getenvDefault(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
+}
+
+func (s *Service) CheckAdmin(pw string) bool {
+	return pw != "" && pw == s.adminPassword
 }
 
 func New(root string) (*Service, error) {
@@ -44,11 +56,12 @@ func New(root string) (*Service, error) {
 		return nil, err
 	}
 	s := &Service{
-		fs:      fs,
-		reg:     storage.NewRegistry(fs.Paths),
-		ix:      index.New(),
-		lock:    lock,
-		logFile: logFile,
+		fs:            fs,
+		reg:           storage.NewRegistry(fs.Paths),
+		ix:            index.New(),
+		lock:          lock,
+		logFile:       logFile,
+		adminPassword: getenvDefault("ADMIN_PASSWORD", "123"),
 	}
 
 	cards, broken, err := fs.ReadAllCards()
@@ -174,11 +187,11 @@ type Filter struct {
 
 func (s *Service) List(f Filter) []*domain.Analysis {
 	res := s.ix.Search(f.Query, f.Status)
-	if f.AnalysisFrom == "" && f.AnalysisTo == "" && f.SynthesisFrom == "" && f.SynthesisTo == "" {
-		return res
-	}
 	out := make([]*domain.Analysis, 0, len(res))
 	for _, a := range res {
+		if a.Deleted {
+			continue
+		}
 		if !inRange(a.AnalysisDate, f.AnalysisFrom, f.AnalysisTo) {
 			continue
 		}
@@ -189,6 +202,45 @@ func (s *Service) List(f Filter) []*domain.Analysis {
 	}
 	return out
 }
+
+func (s *Service) ListDeleted() []*domain.Analysis {
+	out := make([]*domain.Analysis, 0)
+	for _, a := range s.ix.All() {
+		if a.Deleted {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+func (s *Service) setDeleted(id string, deleted bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cur, ok := s.ix.Get(id)
+	if !ok {
+		return fmt.Errorf("анализ не найден: %s", id)
+	}
+	a := cur.Clone()
+	a.Deleted = deleted
+	a.UpdatedAt = time.Now().Format(time.RFC3339)
+	if err := s.fs.WriteCard(a); err != nil {
+		return err
+	}
+	s.ix.Put(a)
+	if err := s.rebuildRegistryLocked(); err != nil {
+		return err
+	}
+	if deleted {
+		slog.Info("анализ помечен на удаление", "id", id)
+	} else {
+		slog.Info("анализ восстановлен", "id", id)
+	}
+	return nil
+}
+
+func (s *Service) SoftDelete(id string) error { return s.setDeleted(id, true) }
+
+func (s *Service) Restore(id string) error { return s.setDeleted(id, false) }
 
 func inRange(d, from, to string) bool {
 	if from == "" && to == "" {
@@ -305,7 +357,7 @@ func (s *Service) RemoveAttachment(id string, kind domain.Kind, rel string) (*do
 	return a, nil
 }
 
-func (s *Service) Delete(id string) error {
+func (s *Service) Purge(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -316,7 +368,7 @@ func (s *Service) Delete(id string) error {
 		return err
 	}
 	s.ix.Delete(id)
-	slog.Info("удалён анализ", "id", id)
+	slog.Info("анализ удалён окончательно", "id", id)
 	return s.rebuildRegistryLocked()
 }
 
@@ -382,9 +434,19 @@ func (s *Service) Backup() (string, error) {
 }
 
 func (s *Service) rebuildRegistryLocked() error {
-	cards := s.ix.All()
+	cards := activeOf(s.ix.All())
 	sortByIDAsc(cards)
 	return s.reg.Rebuild(cards)
+}
+
+func activeOf(cards []*domain.Analysis) []*domain.Analysis {
+	out := make([]*domain.Analysis, 0, len(cards))
+	for _, a := range cards {
+		if !a.Deleted {
+			out = append(out, a)
+		}
+	}
+	return out
 }
 
 func (s *Service) reconcile() error {
@@ -402,7 +464,7 @@ func (s *Service) reconcile() error {
 	if err != nil {
 		return err
 	}
-	if !s.reg.SchemaOK() || !sameIDs(cards, regIDs) {
+	if !s.reg.SchemaOK() || !sameIDs(activeOf(cards), regIDs) {
 		return s.rebuildAndCommit(cards)
 	}
 	return s.commitUncommitted(cards)
