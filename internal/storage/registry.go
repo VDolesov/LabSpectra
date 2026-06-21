@@ -22,7 +22,9 @@ const snapshotKeep = 10
 var registryHeaders = []string{
 	"ID анализа",
 	"дата анализа",
+	"дата синтеза",
 	"продукт",
+	"происхождение",
 	"партия",
 	"название образца",
 	"описание",
@@ -106,7 +108,7 @@ func (r *Registry) writeHeader(f *excelize.File) error {
 		f.SetCellStyle(sheetName, "A1", lastCol+"1", style)
 	}
 
-	widths := []float64{14, 12, 18, 12, 20, 28, 24, 10, 24, 28, 28, 24, 24, 20, 20}
+	widths := []float64{14, 12, 12, 12, 16, 12, 20, 28, 24, 10, 24, 28, 28, 24, 24, 20, 20}
 	for i, w := range widths {
 		col, _ := excelize.ColumnNumberToName(i + 1)
 		f.SetColWidth(sheetName, col, col, w)
@@ -125,7 +127,9 @@ func (r *Registry) rowValues(a *domain.Analysis) []interface{} {
 	return []interface{}{
 		a.ID,
 		a.AnalysisDate,
+		a.SynthesisDate,
 		a.Product,
+		a.Origin,
 		a.Batch,
 		a.SampleName,
 		a.Description,
@@ -271,6 +275,31 @@ func (r *Registry) IDs() ([]string, error) {
 		}
 	}
 	return ids, nil
+}
+
+func (r *Registry) SchemaOK() bool {
+	if _, err := os.Stat(r.paths.Registry()); err != nil {
+		return true
+	}
+	f, err := excelize.OpenFile(r.paths.Registry())
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	rows, err := f.GetRows(sheetName)
+	if err != nil || len(rows) == 0 {
+		return false
+	}
+	head := rows[0]
+	if len(head) != len(registryHeaders) {
+		return false
+	}
+	for i, h := range registryHeaders {
+		if head[i] != h {
+			return false
+		}
+	}
+	return true
 }
 
 func (r *Registry) Healthy() bool {

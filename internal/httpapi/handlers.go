@@ -26,15 +26,23 @@ func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
 		statuses = append(statuses, string(st))
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"root":     s.svc.Root(),
-		"statuses": statuses,
+		"root":           s.svc.Root(),
+		"statuses":       statuses,
+		"products":       domain.Products(),
+		"origin_acripol": domain.OriginAcripol,
 	})
 }
 
 func (s *Server) handleList(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query().Get("q")
-	status := r.URL.Query().Get("status")
-	list := s.svc.List(q, status)
+	q := r.URL.Query()
+	list := s.svc.List(service.Filter{
+		Query:         q.Get("q"),
+		Status:        q.Get("status"),
+		AnalysisFrom:  q.Get("a_from"),
+		AnalysisTo:    q.Get("a_to"),
+		SynthesisFrom: q.Get("s_from"),
+		SynthesisTo:   q.Get("s_to"),
+	})
 	writeJSON(w, http.StatusOK, map[string]interface{}{"items": list, "count": len(list)})
 }
 

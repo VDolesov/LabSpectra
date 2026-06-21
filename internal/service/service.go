@@ -82,14 +82,16 @@ func (s *Service) Close() error {
 func (s *Service) Root() string { return s.fs.Paths.Root }
 
 type CreateInput struct {
-	AnalysisDate string `json:"analysis_date"`
-	Product      string `json:"product"`
-	Batch        string `json:"batch"`
-	SampleName   string `json:"sample_name"`
-	Description  string `json:"description"`
-	ShortResult  string `json:"short_result"`
-	Status       string `json:"status"`
-	Comment      string `json:"comment"`
+	AnalysisDate  string `json:"analysis_date"`
+	SynthesisDate string `json:"synthesis_date"`
+	Product       string `json:"product"`
+	Origin        string `json:"origin"`
+	Batch         string `json:"batch"`
+	SampleName    string `json:"sample_name"`
+	Description   string `json:"description"`
+	ShortResult   string `json:"short_result"`
+	Status        string `json:"status"`
+	Comment       string `json:"comment"`
 }
 
 func (s *Service) Create(in CreateInput) (*domain.Analysis, error) {
@@ -111,12 +113,18 @@ func (s *Service) Create(in CreateInput) (*domain.Analysis, error) {
 	if status == "" {
 		status = string(domain.StatusNew)
 	}
+	product := strings.TrimSpace(in.Product)
+	if !domain.ValidProduct(product) {
+		return nil, fmt.Errorf("неизвестный продукт: %q", product)
+	}
 
 	a := &domain.Analysis{
 		SchemaVersion: domain.SchemaVersion,
 		ID:            id,
 		AnalysisDate:  date,
-		Product:       strings.TrimSpace(in.Product),
+		SynthesisDate: strings.TrimSpace(in.SynthesisDate),
+		Product:       product,
+		Origin:        strings.TrimSpace(in.Origin),
 		Batch:         strings.TrimSpace(in.Batch),
 		SampleName:    strings.TrimSpace(in.SampleName),
 		Description:   in.Description,
@@ -155,19 +163,60 @@ func (s *Service) Get(id string) (*domain.Analysis, error) {
 	return a, nil
 }
 
-func (s *Service) List(query, status string) []*domain.Analysis {
-	return s.ix.Search(query, status)
+type Filter struct {
+	Query         string
+	Status        string
+	AnalysisFrom  string
+	AnalysisTo    string
+	SynthesisFrom string
+	SynthesisTo   string
+}
+
+func (s *Service) List(f Filter) []*domain.Analysis {
+	res := s.ix.Search(f.Query, f.Status)
+	if f.AnalysisFrom == "" && f.AnalysisTo == "" && f.SynthesisFrom == "" && f.SynthesisTo == "" {
+		return res
+	}
+	out := make([]*domain.Analysis, 0, len(res))
+	for _, a := range res {
+		if !inRange(a.AnalysisDate, f.AnalysisFrom, f.AnalysisTo) {
+			continue
+		}
+		if !inRange(a.SynthesisDate, f.SynthesisFrom, f.SynthesisTo) {
+			continue
+		}
+		out = append(out, a)
+	}
+	return out
+}
+
+func inRange(d, from, to string) bool {
+	if from == "" && to == "" {
+		return true
+	}
+	if d == "" {
+		return false
+	}
+	if from != "" && d < from {
+		return false
+	}
+	if to != "" && d > to {
+		return false
+	}
+	return true
 }
 
 type UpdateInput struct {
-	AnalysisDate string `json:"analysis_date"`
-	Product      string `json:"product"`
-	Batch        string `json:"batch"`
-	SampleName   string `json:"sample_name"`
-	Description  string `json:"description"`
-	ShortResult  string `json:"short_result"`
-	Status       string `json:"status"`
-	Comment      string `json:"comment"`
+	AnalysisDate  string `json:"analysis_date"`
+	SynthesisDate string `json:"synthesis_date"`
+	Product       string `json:"product"`
+	Origin        string `json:"origin"`
+	Batch         string `json:"batch"`
+	SampleName    string `json:"sample_name"`
+	Description   string `json:"description"`
+	ShortResult   string `json:"short_result"`
+	Status        string `json:"status"`
+	Comment       string `json:"comment"`
 }
 
 func (s *Service) Update(id string, in UpdateInput) (*domain.Analysis, error) {
@@ -178,9 +227,15 @@ func (s *Service) Update(id string, in UpdateInput) (*domain.Analysis, error) {
 	if !ok {
 		return nil, fmt.Errorf("анализ не найден: %s", id)
 	}
+	product := strings.TrimSpace(in.Product)
+	if !domain.ValidProduct(product) {
+		return nil, fmt.Errorf("неизвестный продукт: %q", product)
+	}
 	a := cur.Clone()
 	a.AnalysisDate = strings.TrimSpace(in.AnalysisDate)
-	a.Product = strings.TrimSpace(in.Product)
+	a.SynthesisDate = strings.TrimSpace(in.SynthesisDate)
+	a.Product = product
+	a.Origin = strings.TrimSpace(in.Origin)
 	a.Batch = strings.TrimSpace(in.Batch)
 	a.SampleName = strings.TrimSpace(in.SampleName)
 	a.Description = in.Description
@@ -334,26 +389,33 @@ func (s *Service) rebuildRegistryLocked() error {
 
 func (s *Service) reconcile() error {
 	cards := s.ix.All()
-	if len(cards) == 0 {
-		return nil
-	}
-	needRebuild := !s.reg.Healthy()
-	if needRebuild {
+	if !s.reg.Healthy() {
+		if len(cards) == 0 {
+			return nil
+		}
 		if _, err := s.reg.QuarantineCorrupted(); err != nil {
 			return err
 		}
-	} else {
-		regIDs, err := s.reg.IDs()
-		if err != nil {
-			return err
-		}
-		needRebuild = !sameIDs(cards, regIDs)
+		return s.rebuildAndCommit(cards)
 	}
-	if needRebuild {
-		if err := s.rebuildRegistryLocked(); err != nil {
-			return err
-		}
+	regIDs, err := s.reg.IDs()
+	if err != nil {
+		return err
 	}
+	if !s.reg.SchemaOK() || !sameIDs(cards, regIDs) {
+		return s.rebuildAndCommit(cards)
+	}
+	return s.commitUncommitted(cards)
+}
+
+func (s *Service) rebuildAndCommit(cards []*domain.Analysis) error {
+	if err := s.rebuildRegistryLocked(); err != nil {
+		return err
+	}
+	return s.commitUncommitted(cards)
+}
+
+func (s *Service) commitUncommitted(cards []*domain.Analysis) error {
 	for _, a := range cards {
 		if a.Committed {
 			continue

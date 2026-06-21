@@ -14,6 +14,28 @@ func AllStatuses() []Status {
 	return []Status{StatusNew, StatusInWork, StatusDone}
 }
 
+const OriginAcripol = "АКРИПОЛ"
+
+var products = []string{"R2531", "V00S9", "PR4832", "E10K7", "E10H6", "КП 1020", "КП 540"}
+
+func Products() []string {
+	out := make([]string, len(products))
+	copy(out, products)
+	return out
+}
+
+func ValidProduct(p string) bool {
+	if p == "" {
+		return true
+	}
+	for _, x := range products {
+		if x == p {
+			return true
+		}
+	}
+	return false
+}
+
 type Kind string
 
 const (
@@ -75,7 +97,9 @@ type Analysis struct {
 	SchemaVersion int         `json:"schema_version"`
 	ID            string      `json:"id"`
 	AnalysisDate  string      `json:"analysis_date"`
+	SynthesisDate string      `json:"synthesis_date"`
 	Product       string      `json:"product"`
+	Origin        string      `json:"origin"`
 	Batch         string      `json:"batch"`
 	SampleName    string      `json:"sample_name"`
 	Description   string      `json:"description"`

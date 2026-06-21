@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/xuri/excelize/v2"
+
 	"labspectra/internal/domain"
 )
 
@@ -24,7 +26,7 @@ func newTestService(t *testing.T) *Service {
 func TestCreateProducesFoldersCardAndRegistry(t *testing.T) {
 	svc := newTestService(t)
 
-	a, err := svc.Create(CreateInput{Product: "Продукт А", Batch: "П-01", SampleName: "Фильтрат"})
+	a, err := svc.Create(CreateInput{Product: "R2531", Batch: "П-01", SampleName: "Фильтрат"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -57,7 +59,7 @@ func TestSequentialIDs(t *testing.T) {
 	svc := newTestService(t)
 	ids := []string{}
 	for i := 0; i < 3; i++ {
-		a, err := svc.Create(CreateInput{Product: "X"})
+		a, err := svc.Create(CreateInput{Product: "R2531"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -73,7 +75,7 @@ func TestSequentialIDs(t *testing.T) {
 
 func TestAddAttachmentAndSpectraSharedNumber(t *testing.T) {
 	svc := newTestService(t)
-	a, _ := svc.Create(CreateInput{Product: "X"})
+	a, _ := svc.Create(CreateInput{Product: "R2531"})
 
 	a, err := svc.AddAttachment(a.ID, domain.KindSpectrum, "data.pdf", strings.NewReader("pdf"))
 	if err != nil {
@@ -94,15 +96,15 @@ func TestAddAttachmentAndSpectraSharedNumber(t *testing.T) {
 
 func TestSearchAndFilter(t *testing.T) {
 	svc := newTestService(t)
-	svc.Create(CreateInput{Product: "Этанол", Batch: "E1", Status: string(domain.StatusDone)})
-	svc.Create(CreateInput{Product: "Метанол", Batch: "M1", Status: string(domain.StatusNew)})
+	svc.Create(CreateInput{Product: "R2531", Batch: "E1", Status: string(domain.StatusDone)})
+	svc.Create(CreateInput{Product: "V00S9", Batch: "M1", Status: string(domain.StatusNew)})
 
-	got := svc.List("этанол", "")
-	if len(got) != 1 || got[0].Product != "Этанол" {
-		t.Errorf("поиск 'этанол' вернул %d записей", len(got))
+	got := svc.List(Filter{Query: "r2531"})
+	if len(got) != 1 || got[0].Product != "R2531" {
+		t.Errorf("поиск 'r2531' вернул %d записей", len(got))
 	}
-	got = svc.List("", string(domain.StatusNew))
-	if len(got) != 1 || got[0].Product != "Метанол" {
+	got = svc.List(Filter{Status: string(domain.StatusNew)})
+	if len(got) != 1 || got[0].Product != "V00S9" {
 		t.Errorf("фильтр по статусу вернул %d записей", len(got))
 	}
 }
@@ -110,8 +112,8 @@ func TestSearchAndFilter(t *testing.T) {
 func TestRecoverFromCorruptedRegistry(t *testing.T) {
 	root := t.TempDir()
 	svc, _ := New(root)
-	svc.Create(CreateInput{Product: "A"})
-	svc.Create(CreateInput{Product: "B"})
+	svc.Create(CreateInput{Product: "R2531"})
+	svc.Create(CreateInput{Product: "V00S9"})
 
 	regPath := filepath.Join(root, "registry.xlsx")
 	if err := os.WriteFile(regPath, []byte("это не xlsx"), 0o644); err != nil {
@@ -133,7 +135,7 @@ func TestRecoverFromCorruptedRegistry(t *testing.T) {
 		t.Error("повреждённый файл не помещён в карантин")
 	}
 
-	list := svc2.List("", "")
+	list := svc2.List(Filter{})
 	if len(list) != 2 {
 		t.Errorf("после восстановления %d анализов, ожидалось 2", len(list))
 	}
@@ -141,8 +143,8 @@ func TestRecoverFromCorruptedRegistry(t *testing.T) {
 
 func TestRebuildRegistry(t *testing.T) {
 	svc := newTestService(t)
-	svc.Create(CreateInput{Product: "A"})
-	svc.Create(CreateInput{Product: "B"})
+	svc.Create(CreateInput{Product: "R2531"})
+	svc.Create(CreateInput{Product: "V00S9"})
 	n, err := svc.RebuildRegistry()
 	if err != nil {
 		t.Fatal(err)
@@ -156,14 +158,14 @@ func TestDeleteMovesToTrashAndUpdatesIndex(t *testing.T) {
 	root := t.TempDir()
 	svc, _ := New(root)
 	defer svc.Close()
-	a1, _ := svc.Create(CreateInput{Product: "A"})
-	svc.Create(CreateInput{Product: "B"})
+	a1, _ := svc.Create(CreateInput{Product: "R2531"})
+	svc.Create(CreateInput{Product: "V00S9"})
 
 	if err := svc.Delete(a1.ID); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
-	if len(svc.List("", "")) != 1 {
-		t.Errorf("после удаления осталось %d анализов, ожидался 1", len(svc.List("", "")))
+	if len(svc.List(Filter{})) != 1 {
+		t.Errorf("после удаления осталось %d анализов, ожидался 1", len(svc.List(Filter{})))
 	}
 	if _, ok := svc.ix.Get(a1.ID); ok {
 		t.Error("удалённый анализ остался в индексе")
@@ -183,7 +185,7 @@ func TestUpsertCreatesNoSnapshots(t *testing.T) {
 	svc, _ := New(root)
 	defer svc.Close()
 	for i := 0; i < 5; i++ {
-		if _, err := svc.Create(CreateInput{Product: "X"}); err != nil {
+		if _, err := svc.Create(CreateInput{Product: "R2531"}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -195,7 +197,7 @@ func TestUpsertCreatesNoSnapshots(t *testing.T) {
 
 func TestBackupCreatesZip(t *testing.T) {
 	svc := newTestService(t)
-	svc.Create(CreateInput{Product: "A"})
+	svc.Create(CreateInput{Product: "R2531"})
 	path, err := svc.Backup()
 	if err != nil {
 		t.Fatalf("Backup: %v", err)
@@ -214,7 +216,7 @@ func TestBackupCreatesZip(t *testing.T) {
 
 func TestAttachmentFileContainment(t *testing.T) {
 	svc := newTestService(t)
-	a, _ := svc.Create(CreateInput{Product: "X"})
+	a, _ := svc.Create(CreateInput{Product: "R2531"})
 
 	p, err := svc.AttachmentFile(a.ID, "photos/photo_1.jpg")
 	if err != nil {
@@ -237,8 +239,8 @@ func TestAttachmentFileContainment(t *testing.T) {
 func TestReconcileRebuildsOnOrphanRow(t *testing.T) {
 	root := t.TempDir()
 	svc, _ := New(root)
-	svc.Create(CreateInput{Product: "A"})
-	b, _ := svc.Create(CreateInput{Product: "B"})
+	svc.Create(CreateInput{Product: "R2531"})
+	b, _ := svc.Create(CreateInput{Product: "V00S9"})
 
 	if err := os.RemoveAll(filepath.Join(root, "samples", b.ID)); err != nil {
 		t.Fatal(err)
@@ -250,8 +252,8 @@ func TestReconcileRebuildsOnOrphanRow(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer svc2.Close()
-	if len(svc2.List("", "")) != 1 {
-		t.Errorf("в индексе %d анализов, ожидался 1", len(svc2.List("", "")))
+	if len(svc2.List(Filter{})) != 1 {
+		t.Errorf("в индексе %d анализов, ожидался 1", len(svc2.List(Filter{})))
 	}
 	ids, err := svc2.reg.IDs()
 	if err != nil {
@@ -259,6 +261,68 @@ func TestReconcileRebuildsOnOrphanRow(t *testing.T) {
 	}
 	if len(ids) != 1 || ids[0] != "IR-"+yearStr()+"-001" {
 		t.Errorf("реестр не пересобран после сироты: %v", ids)
+	}
+}
+
+func TestProductValidation(t *testing.T) {
+	svc := newTestService(t)
+	if _, err := svc.Create(CreateInput{Product: "НЕТ-ТАКОГО"}); err == nil {
+		t.Error("несуществующий продукт принят")
+	}
+	if _, err := svc.Create(CreateInput{Product: "R2531"}); err != nil {
+		t.Errorf("валидный продукт отклонён: %v", err)
+	}
+	if _, err := svc.Create(CreateInput{Product: ""}); err != nil {
+		t.Errorf("пустой продукт отклонён: %v", err)
+	}
+}
+
+func TestDateFilter(t *testing.T) {
+	svc := newTestService(t)
+	svc.Create(CreateInput{Product: "R2531", AnalysisDate: "2026-01-10", SynthesisDate: "2026-01-01"})
+	svc.Create(CreateInput{Product: "V00S9", AnalysisDate: "2026-02-20", SynthesisDate: "2026-02-01"})
+	svc.Create(CreateInput{Product: "PR4832", AnalysisDate: "2026-03-30", SynthesisDate: "2026-03-01"})
+
+	got := svc.List(Filter{AnalysisFrom: "2026-02-01", AnalysisTo: "2026-02-28"})
+	if len(got) != 1 || got[0].AnalysisDate != "2026-02-20" {
+		t.Errorf("фильтр по дате анализа вернул %d записей", len(got))
+	}
+	got = svc.List(Filter{SynthesisFrom: "2026-03-01"})
+	if len(got) != 1 || got[0].Product != "PR4832" {
+		t.Errorf("фильтр по дате синтеза вернул %d записей", len(got))
+	}
+	got = svc.List(Filter{AnalysisFrom: "2026-01-01", AnalysisTo: "2026-12-31"})
+	if len(got) != 3 {
+		t.Errorf("широкий диапазон вернул %d, ожидалось 3", len(got))
+	}
+}
+
+func TestReconcileRebuildsOnSchemaChange(t *testing.T) {
+	root := t.TempDir()
+	svc, _ := New(root)
+	svc.Create(CreateInput{Product: "R2531"})
+	svc.Close()
+
+	f, err := excelize.OpenFile(filepath.Join(root, "registry.xlsx"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.SetCellValue("Реестр", "A1", "устаревший заголовок")
+	if err := f.Save(); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+
+	svc2, err := New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc2.Close()
+	if !svc2.reg.SchemaOK() {
+		t.Error("схема реестра не восстановлена при старте")
+	}
+	if len(svc2.List(Filter{})) != 1 {
+		t.Error("данные потеряны при пересборке схемы")
 	}
 }
 
