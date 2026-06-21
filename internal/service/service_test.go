@@ -360,6 +360,28 @@ func TestSourceValidation(t *testing.T) {
 	}
 }
 
+func TestOperatorRoundTrip(t *testing.T) {
+	svc := newTestService(t)
+	a, err := svc.Create(CreateInput{Product: "R2531", Operator: "Иванов"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.Operator != "Иванов" {
+		t.Fatalf("Operator=%q, ожидалось Иванов", a.Operator)
+	}
+	a, err = svc.Update(a.ID, UpdateInput{Product: "R2531", Operator: "Петров"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.Operator != "Петров" {
+		t.Fatalf("Operator=%q, ожидалось Петров", a.Operator)
+	}
+	got := svc.List(Filter{Query: "Петров"})
+	if len(got) != 1 || got[0].ID != a.ID {
+		t.Fatalf("поиск по оператору вернул %d записей", len(got))
+	}
+}
+
 func TestReconcileRebuildsOnSchemaChange(t *testing.T) {
 	root := t.TempDir()
 	svc, _ := New(root)

@@ -184,6 +184,7 @@ type CreateInput struct {
 	Origin        string `json:"origin"`
 	Source        string `json:"source"`
 	Batch         string `json:"batch"`
+	Operator      string `json:"operator"`
 	SampleName    string `json:"sample_name"`
 	Description   string `json:"description"`
 	ShortResult   string `json:"short_result"`
@@ -228,6 +229,7 @@ func (s *Service) Create(in CreateInput) (*domain.Analysis, error) {
 		Origin:        strings.TrimSpace(in.Origin),
 		Source:        source,
 		Batch:         strings.TrimSpace(in.Batch),
+		Operator:      strings.TrimSpace(in.Operator),
 		SampleName:    strings.TrimSpace(in.SampleName),
 		Description:   in.Description,
 		ShortResult:   in.ShortResult,
@@ -354,6 +356,7 @@ type UpdateInput struct {
 	Origin        string `json:"origin"`
 	Source        string `json:"source"`
 	Batch         string `json:"batch"`
+	Operator      string `json:"operator"`
 	SampleName    string `json:"sample_name"`
 	Description   string `json:"description"`
 	ShortResult   string `json:"short_result"`
@@ -387,6 +390,7 @@ func (s *Service) Update(id string, in UpdateInput) (*domain.Analysis, error) {
 	a.Origin = strings.TrimSpace(in.Origin)
 	a.Source = source
 	a.Batch = strings.TrimSpace(in.Batch)
+	a.Operator = strings.TrimSpace(in.Operator)
 	a.SampleName = strings.TrimSpace(in.SampleName)
 	a.Description = in.Description
 	a.ShortResult = in.ShortResult
