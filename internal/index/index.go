@@ -25,7 +25,7 @@ func New() *Index {
 
 func searchKey(a *domain.Analysis) string {
 	return strings.ToLower(strings.Join([]string{
-		a.ID, a.Product, a.Origin, a.Batch, a.SampleName,
+		a.ID, a.Product, a.Origin, a.Source, a.Batch, a.SampleName,
 		a.ShortResult, a.Description, a.Comment, a.Status, a.AnalysisDate, a.SynthesisDate,
 	}, "\n"))
 }

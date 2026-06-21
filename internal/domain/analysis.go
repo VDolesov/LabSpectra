@@ -16,6 +16,26 @@ func AllStatuses() []Status {
 
 const OriginAcripol = "АКРИПОЛ"
 
+var sources = []string{"лаб", "цех", "посылка"}
+
+func Sources() []string {
+	out := make([]string, len(sources))
+	copy(out, sources)
+	return out
+}
+
+func ValidSource(s string) bool {
+	if s == "" {
+		return true
+	}
+	for _, x := range sources {
+		if x == s {
+			return true
+		}
+	}
+	return false
+}
+
 var products = []string{"R2531", "V00S9", "PR4832", "E10K7", "E10H6", "КП 1020", "КП 540"}
 
 func Products() []string {
@@ -92,6 +112,7 @@ type Analysis struct {
 	SynthesisDate string      `json:"synthesis_date"`
 	Product       string      `json:"product"`
 	Origin        string      `json:"origin"`
+	Source        string      `json:"source"`
 	Batch         string      `json:"batch"`
 	SampleName    string      `json:"sample_name"`
 	Description   string      `json:"description"`

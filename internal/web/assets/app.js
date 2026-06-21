@@ -1,7 +1,7 @@
 "use strict";
 
 const state = {
-  meta: { root: "", statuses: [], products: [], origin_acripol: "АКРИПОЛ", can_open_local: false },
+  meta: { root: "", statuses: [], products: [], sources: [], origin_acripol: "АКРИПОЛ", can_open_local: false },
   items: [],
   selectedId: null,
   query: "",
@@ -14,7 +14,7 @@ const state = {
   view: "table",
 };
 
-let editOriginRead = null;
+let editManufacturerRead = null;
 
 const $ = (sel) => document.querySelector(sel);
 const el = (tag, props = {}, ...kids) => {
@@ -69,6 +69,7 @@ async function loadMeta() {
   renderStatusFilters();
   renderStatusSelect();
   renderCreateProduct();
+  renderCreateSource();
   setupCreateOrigin();
   applyMetaVisibility();
 }
@@ -165,10 +166,11 @@ function beginEdit(td, item, field, type) {
   if (type === "status") {
     input = el("select", { class: "cell-edit" },
       ...state.meta.statuses.map((s) => el("option", s === current ? { value: s, selected: "" } : { value: s }, s)));
-  } else if (type === "product") {
+  } else if (type === "product" || type === "source") {
+    const options = type === "product" ? state.meta.products : state.meta.sources;
     input = el("select", { class: "cell-edit" },
       el("option", current === "" ? { value: "", selected: "" } : { value: "" }, "—"),
-      ...state.meta.products.map((p) => el("option", p === current ? { value: p, selected: "" } : { value: p }, p)));
+      ...options.map((p) => el("option", p === current ? { value: p, selected: "" } : { value: p }, p)));
   } else {
     input = el("input", { class: "cell-edit", type: type === "date" ? "date" : "text", value: current });
   }
@@ -190,7 +192,7 @@ function beginEdit(td, item, field, type) {
     if (ev.key === "Enter") { ev.preventDefault(); input.blur(); }
     else if (ev.key === "Escape") { done = true; renderTable(); }
   });
-  if (type === "status" || type === "product") input.addEventListener("change", () => input.blur());
+  if (type === "status" || type === "product" || type === "source") input.addEventListener("change", () => input.blur());
 }
 
 async function saveField(item, field, val) {
@@ -200,6 +202,7 @@ async function saveField(item, field, val) {
     synthesis_date: u.synthesis_date || "",
     product: u.product || "",
     origin: u.origin || "",
+    source: u.source || "",
     batch: u.batch || "",
     sample_name: u.sample_name || "",
     description: u.description || "",
@@ -245,7 +248,7 @@ function renderTable() {
   tbody.innerHTML = "";
   if (state.items.length === 0) {
     tbody.append(el("tr", { class: "empty-row" },
-      el("td", { colspan: "12" }, "Пока нет анализов. Нажмите «＋ Новый анализ», чтобы создать первый.")));
+      el("td", { colspan: "13" }, "Пока нет анализов. Нажмите «＋ Новый анализ», чтобы создать первый.")));
     return;
   }
   sortedItems().forEach((a) => {
@@ -257,6 +260,7 @@ function renderTable() {
       editableCell(a, "synthesis_date", "date", fmtDay(a.synthesis_date)),
       editableCell(a, "product", "product", a.product || "—"),
       editableCell(a, "origin", "text", a.origin || "—"),
+      editableCell(a, "source", "source", a.source || "—"),
       editableCell(a, "batch", "text", a.batch || "—"),
       editableCell(a, "sample_name", "text", a.sample_name || "—"),
       editableCell(a, "short_result", "text", a.short_result || "—"),
@@ -315,8 +319,11 @@ function renderDetail(a) {
   const productSel = el("select", { name: "product" },
     el("option", (a.product || "") === "" ? { value: "", selected: "" } : { value: "" }, "—"),
     ...state.meta.products.map((p) => el("option", p === a.product ? { value: p, selected: "" } : { value: p }, p)));
-  const origin = originControls(a.origin || "");
-  editOriginRead = origin.read;
+  const sourceSel = el("select", { name: "source" },
+    el("option", (a.source || "") === "" ? { value: "", selected: "" } : { value: "" }, "—"),
+    ...state.meta.sources.map((s) => el("option", s === a.source ? { value: s, selected: "" } : { value: s }, s)));
+  const manufacturer = manufacturerControls(a.origin || "");
+  editManufacturerRead = manufacturer.read;
 
   const actions = [
     el("button", { class: "btn del small", onclick: () => deleteAnalysis(a.id) }, "🗑 Удалить"),
@@ -340,8 +347,9 @@ function renderDetail(a) {
         field("Дата синтеза", "synthesis_date", a.synthesis_date, "date"),
         el("label", {}, "Продукт", productSel),
         el("label", {}, "Статус", statusSel),
-        origin.selLabel,
-        origin.srcLabel,
+        manufacturer.selLabel,
+        manufacturer.srcLabel,
+        el("label", {}, "Происхождение", sourceSel),
         field("Партия", "batch", a.batch)),
       field("Дополнительно", "sample_name", a.sample_name),
       field("Описание", "description", a.description, "textarea"),
@@ -391,7 +399,7 @@ function attachGroup(a, label, kind, list, accept, isImage) {
 async function saveCard(id) {
   const fd = new FormData($("#edit-form"));
   const payload = Object.fromEntries(fd.entries());
-  if (editOriginRead) payload.origin = editOriginRead();
+  if (editManufacturerRead) payload.origin = editManufacturerRead();
   try {
     await api("/api/analyses/" + encodeURIComponent(id), {
       method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
@@ -587,7 +595,7 @@ function renderAdminMaintenance() {
     el("button", { class: "btn primary", onclick: openModal }, "＋ Новый анализ")));
 }
 
-function originControls(current) {
+function manufacturerControls(current) {
   const acripol = state.meta.origin_acripol;
   const isAcripol = current === acripol;
   const isExternal = current && !isAcripol;
@@ -595,11 +603,11 @@ function originControls(current) {
     el("option", current === "" ? { value: "", selected: "" } : { value: "" }, "—"),
     el("option", isAcripol ? { value: acripol, selected: "" } : { value: acripol }, acripol),
     el("option", isExternal ? { value: "__ext__", selected: "" } : { value: "__ext__" }, "стороннее"));
-  const src = el("input", { type: "text", value: isExternal ? current : "", placeholder: "название стороннего источника" });
-  const srcLabel = el("label", { class: isExternal ? "" : "hidden" }, "Источник", src);
+  const src = el("input", { type: "text", value: isExternal ? current : "", placeholder: "название производителя" });
+  const srcLabel = el("label", { class: isExternal ? "" : "hidden" }, "Сторонний производитель", src);
   sel.addEventListener("change", () => srcLabel.classList.toggle("hidden", sel.value !== "__ext__"));
   const read = () => (sel.value === "__ext__" ? src.value.trim() : sel.value);
-  return { selLabel: el("label", {}, "Происхождение", sel), srcLabel, read };
+  return { selLabel: el("label", {}, "Производитель", sel), srcLabel, read };
 }
 
 function renderStatusSelect() {
@@ -613,6 +621,13 @@ function renderCreateProduct() {
   sel.innerHTML = "";
   sel.append(el("option", { value: "" }, "—"));
   state.meta.products.forEach((p) => sel.append(el("option", { value: p }, p)));
+}
+
+function renderCreateSource() {
+  const sel = $("#create-source");
+  sel.innerHTML = "";
+  sel.append(el("option", { value: "" }, "—"));
+  state.meta.sources.forEach((s) => sel.append(el("option", { value: s }, s)));
 }
 
 function setupCreateOrigin() {
