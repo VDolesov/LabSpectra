@@ -161,6 +161,9 @@ func TestDeleteMovesToTrashAndUpdatesIndex(t *testing.T) {
 	a1, _ := svc.Create(CreateInput{Product: "R2531"})
 	svc.Create(CreateInput{Product: "V00S9"})
 
+	if err := svc.SoftDelete(a1.ID); err != nil {
+		t.Fatalf("SoftDelete: %v", err)
+	}
 	if err := svc.Purge(a1.ID); err != nil {
 		t.Fatalf("Purge: %v", err)
 	}
@@ -344,6 +347,9 @@ func TestSoftDeleteAndRestore(t *testing.T) {
 	if len(ids) != 1 {
 		t.Errorf("в реестре %d строк, ожидалась 1 (удалённый исключён)", len(ids))
 	}
+	if n, err := svc.RebuildRegistry(); err != nil || n != 1 {
+		t.Errorf("пересборка вернула (%d, %v), ожидалось 1 активная строка", n, err)
+	}
 
 	if err := svc.Restore(a.ID); err != nil {
 		t.Fatal(err)
@@ -356,6 +362,33 @@ func TestSoftDeleteAndRestore(t *testing.T) {
 	}
 }
 
+func TestDeletedAnalysisIsNotPubliclyAccessibleOrMutable(t *testing.T) {
+	svc := newTestService(t)
+	a, _ := svc.Create(CreateInput{Product: "R2531"})
+	if _, err := svc.AddAttachment(a.ID, domain.KindPhoto, "photo.jpg", strings.NewReader("jpg")); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SoftDelete(a.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := svc.Get(a.ID); err == nil {
+		t.Error("Get вернул мягко удалённый анализ")
+	}
+	if _, err := svc.Update(a.ID, UpdateInput{Product: "R2531"}); err == nil {
+		t.Error("Update разрешил править мягко удалённый анализ")
+	}
+	if _, err := svc.AddAttachment(a.ID, domain.KindPhoto, "photo.jpg", strings.NewReader("jpg")); err == nil {
+		t.Error("AddAttachment разрешил добавить файл в мягко удалённый анализ")
+	}
+	if _, err := svc.RemoveAttachment(a.ID, domain.KindPhoto, "photos/photo_1.jpg"); err == nil {
+		t.Error("RemoveAttachment разрешил удалить файл из мягко удалённого анализа")
+	}
+	if _, err := svc.AttachmentFile(a.ID, "photos/photo_1.jpg"); err == nil {
+		t.Error("AttachmentFile отдал файл мягко удалённого анализа")
+	}
+}
+
 func TestCheckAdmin(t *testing.T) {
 	svc := newTestService(t)
 	if !svc.CheckAdmin("123") {
@@ -363,6 +396,14 @@ func TestCheckAdmin(t *testing.T) {
 	}
 	if svc.CheckAdmin("000") || svc.CheckAdmin("") {
 		t.Error("неверный/пустой пароль принят")
+	}
+}
+
+func TestAdminPasswordRequiredForPublicRun(t *testing.T) {
+	t.Setenv("PORT", "8080")
+	t.Setenv("ADMIN_PASSWORD", "")
+	if _, err := New(t.TempDir()); err == nil {
+		t.Error("публичный запуск без ADMIN_PASSWORD разрешён")
 	}
 }
 

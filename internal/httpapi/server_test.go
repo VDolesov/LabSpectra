@@ -3,6 +3,7 @@ package httpapi
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"labspectra/internal/service"
@@ -58,5 +59,26 @@ func TestGuardAllowsLocal(t *testing.T) {
 	}
 	if rec.Header().Get("Content-Security-Policy") == "" {
 		t.Error("отсутствует заголовок Content-Security-Policy")
+	}
+}
+
+func TestMaintenanceEndpointsRequireAdmin(t *testing.T) {
+	h := newTestHandler(t)
+
+	for _, tc := range []struct {
+		method string
+		path   string
+		body   string
+	}{
+		{http.MethodPost, "/api/backup", ""},
+		{http.MethodPost, "/api/registry/rebuild", ""},
+	} {
+		req := httptest.NewRequest(tc.method, "http://127.0.0.1:8765"+tc.path, strings.NewReader(tc.body))
+		req.Host = "127.0.0.1:8765"
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusUnauthorized {
+			t.Errorf("%s без админа: код %d, ожидался 401", tc.path, rec.Code)
+		}
 	}
 }

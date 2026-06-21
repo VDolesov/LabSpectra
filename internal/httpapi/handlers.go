@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"encoding/json"
+	"net"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -9,6 +10,8 @@ import (
 	"labspectra/internal/domain"
 	"labspectra/internal/service"
 )
+
+const maxUploadBytes = 100 << 20
 
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -25,11 +28,17 @@ func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
 	for _, st := range domain.AllStatuses() {
 		statuses = append(statuses, string(st))
 	}
+	local := isLocalRequest(r)
+	root := ""
+	if local {
+		root = s.svc.Root()
+	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"root":           s.svc.Root(),
+		"root":           root,
 		"statuses":       statuses,
 		"products":       domain.Products(),
 		"origin_acripol": domain.OriginAcripol,
+		"can_open_local": local,
 	})
 }
 
@@ -146,6 +155,7 @@ func (s *Server) handleAddAttachment(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "неизвестный тип вложения (kind): photo|spectrum")
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes)
 	if err := r.ParseMultipartForm(64 << 20); err != nil {
 		writeErr(w, http.StatusBadRequest, "не удалось прочитать загрузку: "+err.Error())
 		return
@@ -193,6 +203,10 @@ func (s *Server) handleRemoveAttachment(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleOpenFolder(w http.ResponseWriter, r *http.Request) {
+	if !isLocalRequest(r) {
+		writeErr(w, http.StatusForbidden, "открытие папки доступно только при локальном запуске")
+		return
+	}
 	id := r.PathValue("id")
 	if err := s.svc.OpenFolder(id); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
@@ -202,6 +216,9 @@ func (s *Server) handleOpenFolder(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleBackup(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
 	path, err := s.svc.Backup()
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
@@ -211,6 +228,10 @@ func (s *Server) handleBackup(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleOpenRegistry(w http.ResponseWriter, r *http.Request) {
+	if !isLocalRequest(r) {
+		writeErr(w, http.StatusForbidden, "открытие Excel доступно только при локальном запуске")
+		return
+	}
 	if err := s.svc.OpenRegistry(); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
@@ -219,6 +240,9 @@ func (s *Server) handleOpenRegistry(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRebuild(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
 	n, err := s.svc.RebuildRegistry()
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
@@ -248,4 +272,13 @@ func activeContentExt(name string) bool {
 		return true
 	}
 	return false
+}
+
+func isLocalRequest(r *http.Request) bool {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"crypto/subtle"
 	"fmt"
 	"io"
 	"log/slog"
@@ -28,18 +29,28 @@ type Service struct {
 	mu            sync.Mutex
 }
 
-func getenvDefault(key, def string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
+func adminPasswordFromEnv() (string, error) {
+	if v := os.Getenv("ADMIN_PASSWORD"); v != "" {
+		return v, nil
 	}
-	return def
+	if os.Getenv("PORT") != "" {
+		return "", fmt.Errorf("ADMIN_PASSWORD должен быть задан для публичного запуска")
+	}
+	return "123", nil
 }
 
 func (s *Service) CheckAdmin(pw string) bool {
-	return pw != "" && pw == s.adminPassword
+	if pw == "" || s.adminPassword == "" {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(pw), []byte(s.adminPassword)) == 1
 }
 
 func New(root string) (*Service, error) {
+	adminPassword, err := adminPasswordFromEnv()
+	if err != nil {
+		return nil, err
+	}
 	fs, err := storage.NewFileStore(root)
 	if err != nil {
 		return nil, err
@@ -61,7 +72,7 @@ func New(root string) (*Service, error) {
 		ix:            index.New(),
 		lock:          lock,
 		logFile:       logFile,
-		adminPassword: getenvDefault("ADMIN_PASSWORD", "123"),
+		adminPassword: adminPassword,
 	}
 
 	cards, broken, err := fs.ReadAllCards()
@@ -170,7 +181,7 @@ func (s *Service) Create(in CreateInput) (*domain.Analysis, error) {
 
 func (s *Service) Get(id string) (*domain.Analysis, error) {
 	a, ok := s.ix.Get(id)
-	if !ok {
+	if !ok || a.Deleted {
 		return nil, fmt.Errorf("анализ не найден: %s", id)
 	}
 	return a, nil
@@ -279,6 +290,9 @@ func (s *Service) Update(id string, in UpdateInput) (*domain.Analysis, error) {
 	if !ok {
 		return nil, fmt.Errorf("анализ не найден: %s", id)
 	}
+	if cur.Deleted {
+		return nil, fmt.Errorf("анализ ожидает подтверждения удаления: %s", id)
+	}
 	product := strings.TrimSpace(in.Product)
 	if !domain.ValidProduct(product) {
 		return nil, fmt.Errorf("неизвестный продукт: %q", product)
@@ -311,6 +325,9 @@ func (s *Service) AddAttachment(id string, kind domain.Kind, origName string, sr
 	if !ok {
 		return nil, fmt.Errorf("анализ не найден: %s", id)
 	}
+	if cur.Deleted {
+		return nil, fmt.Errorf("анализ ожидает подтверждения удаления: %s", id)
+	}
 	rel, err := s.fs.SaveAttachment(id, kind, origName, src)
 	if err != nil {
 		return nil, err
@@ -334,6 +351,9 @@ func (s *Service) RemoveAttachment(id string, kind domain.Kind, rel string) (*do
 	cur, ok := s.ix.Get(id)
 	if !ok {
 		return nil, fmt.Errorf("анализ не найден: %s", id)
+	}
+	if cur.Deleted {
+		return nil, fmt.Errorf("анализ ожидает подтверждения удаления: %s", id)
 	}
 	a := cur.Clone()
 	list := a.Attachments.For(kind)
@@ -361,8 +381,12 @@ func (s *Service) Purge(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if _, ok := s.ix.Get(id); !ok {
+	cur, ok := s.ix.Get(id)
+	if !ok {
 		return fmt.Errorf("анализ не найден: %s", id)
+	}
+	if !cur.Deleted {
+		return fmt.Errorf("сначала отправьте анализ на удаление: %s", id)
 	}
 	if err := s.fs.TrashSample(id); err != nil {
 		return err
@@ -386,6 +410,10 @@ func (s *Service) persist(a *domain.Analysis) error {
 func (s *Service) AttachmentFile(id, rel string) (string, error) {
 	if !domain.ValidID(id) {
 		return "", fmt.Errorf("некорректный ID")
+	}
+	a, ok := s.ix.Get(id)
+	if !ok || a.Deleted {
+		return "", fmt.Errorf("анализ не найден: %s", id)
 	}
 	if rel == "" || strings.ContainsRune(rel, ':') {
 		return "", fmt.Errorf("недопустимый путь")
@@ -424,7 +452,7 @@ func (s *Service) RebuildRegistry() (int, error) {
 	if err := s.rebuildRegistryLocked(); err != nil {
 		return 0, err
 	}
-	return s.ix.Len(), nil
+	return len(activeOf(s.ix.All())), nil
 }
 
 func (s *Service) Backup() (string, error) {
