@@ -9,6 +9,8 @@ const state = {
   dates: { aFrom: "", aTo: "", sFrom: "", sTo: "" },
   sort: { key: "", dir: 1 },
   admin: "",
+  adminTab: "requests",
+  previousView: "table",
   view: "table",
 };
 
@@ -73,7 +75,7 @@ async function loadMeta() {
 
 function applyMetaVisibility() {
   const canOpenLocal = !!state.meta.can_open_local;
-  $("#btn-open-xlsx").classList.toggle("hidden", !canOpenLocal);
+  $("#btn-open-xlsx").classList.toggle("hidden", state.view === "admin" || !canOpenLocal);
 }
 
 async function loadList() {
@@ -90,9 +92,18 @@ async function loadList() {
 }
 
 function setView(v) {
+  if (state.view !== "admin" && v === "admin") state.previousView = state.view;
   state.view = v;
   $("#view-table").classList.toggle("hidden", v !== "table");
   $("#view-cards").classList.toggle("hidden", v !== "cards");
+  $("#view-admin").classList.toggle("hidden", v !== "admin");
+  $(".toolbar").classList.toggle("hidden", v === "admin");
+  $(".datefilters").classList.toggle("hidden", v === "admin");
+  $("#btn-new").classList.toggle("hidden", v === "admin");
+  $("#btn-backup").classList.toggle("hidden", v === "admin");
+  $("#btn-rebuild").classList.toggle("hidden", v === "admin");
+  $("#btn-open-xlsx").classList.toggle("hidden", v === "admin" || !state.meta.can_open_local);
+  $("#btn-admin").textContent = v === "admin" ? "Выйти" : "🛡 Управление";
   document.querySelectorAll(".seg").forEach((b) => b.classList.toggle("active", b.dataset.view === v));
 }
 
@@ -445,22 +456,40 @@ async function ensureAdmin() {
 }
 
 async function enterAdmin() {
+  if (state.view === "admin") {
+    exitAdmin();
+    return;
+  }
   if (!(await ensureAdmin())) return;
-  $("#admin-modal").classList.remove("hidden");
-  await renderAdminDeleted();
+  setView("admin");
+  await renderAdminPanel();
 }
 
-function closeAdmin() { $("#admin-modal").classList.add("hidden"); }
+function exitAdmin() {
+  setView(state.previousView || "table");
+}
+
+async function renderAdminPanel() {
+  document.querySelectorAll(".admin-tab").forEach((b) => b.classList.toggle("active", b.dataset.adminTab === state.adminTab));
+  if (state.adminTab === "products") await renderAdminProducts();
+  else if (state.adminTab === "maintenance") renderAdminMaintenance();
+  else await renderAdminDeleted();
+}
 
 async function renderAdminDeleted() {
-  const body = $("#admin-body");
+  const body = $("#admin-content");
   body.innerHTML = "";
   let data;
   try { data = await api("/api/admin/deleted", { headers: adminHdr() }); }
   catch (e) { toast(e.message, "err"); return; }
   const items = data.items || [];
+  body.append(el("div", { class: "admin-panel-head" },
+    el("div", {},
+      el("h2", {}, "Заявки на удаление"),
+      el("p", {}, "Обычный пользователь отправляет анализ на удаление, а здесь администратор подтверждает или возвращает его.")),
+    el("span", { class: "count" }, `${items.length} ${plural(items.length)}`)));
   if (items.length === 0) {
-    body.append(el("div", { class: "muted" }, "Нет анализов, ожидающих подтверждения удаления."));
+    body.append(el("div", { class: "admin-empty" }, "Нет анализов, ожидающих подтверждения удаления."));
     return;
   }
   items.forEach((a) => {
@@ -478,7 +507,7 @@ async function adminRestore(id) {
   try {
     await api(`/api/admin/analyses/${encodeURIComponent(id)}/restore`, { method: "POST", headers: adminHdr() });
     toast(`${id} восстановлен`, "ok");
-    await renderAdminDeleted();
+    await renderAdminPanel();
     await loadList();
   } catch (e) { toast(e.message, "err"); }
 }
@@ -488,9 +517,74 @@ async function adminPurge(id) {
   try {
     await api(`/api/admin/analyses/${encodeURIComponent(id)}`, { method: "DELETE", headers: adminHdr() });
     toast(`${id} удалён навсегда`, "ok");
-    await renderAdminDeleted();
+    await renderAdminPanel();
     await loadList();
   } catch (e) { toast(e.message, "err"); }
+}
+
+async function renderAdminProducts() {
+  const body = $("#admin-content");
+  body.innerHTML = "";
+  let data;
+  try { data = await api("/api/admin/products", { headers: adminHdr() }); }
+  catch (e) { toast(e.message, "err"); return; }
+  const products = data.items || [];
+  const input = el("input", { type: "text", id: "admin-product-input", placeholder: "например NEW-01" });
+  body.append(el("div", { class: "admin-panel-head" },
+    el("div", {},
+      el("h2", {}, "Препараты"),
+      el("p", {}, "Этот список используется в выпадающем поле «Продукт» при создании и редактировании анализа.")),
+    el("span", { class: "count" }, `${products.length} позиций`)));
+  body.append(el("form", {
+    class: "admin-inline-form",
+    onsubmit: async (e) => {
+      e.preventDefault();
+      await adminAddProduct(input.value);
+      input.value = "";
+    },
+  }, input, el("button", { class: "btn primary", type: "submit" }, "Добавить")));
+  body.append(el("div", { class: "product-list" }, ...products.map((p) =>
+    el("div", { class: "product-row" },
+      el("span", {}, p),
+      el("button", { class: "btn del small", onclick: () => adminDeleteProduct(p) }, "Удалить")))));
+}
+
+async function adminAddProduct(product) {
+  product = product.trim();
+  if (!product) return;
+  try {
+    await api("/api/admin/products", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...adminHdr() },
+      body: JSON.stringify({ product }),
+    });
+    toast("Препарат добавлен", "ok");
+    await loadMeta();
+    await renderAdminPanel();
+  } catch (e) { toast(e.message, "err"); }
+}
+
+async function adminDeleteProduct(product) {
+  if (!confirm(`Удалить препарат ${product}?`)) return;
+  try {
+    await api(`/api/admin/products/${encodeURIComponent(product)}`, { method: "DELETE", headers: adminHdr() });
+    toast("Препарат удалён", "ok");
+    await loadMeta();
+    await renderAdminPanel();
+  } catch (e) { toast(e.message, "err"); }
+}
+
+function renderAdminMaintenance() {
+  const body = $("#admin-content");
+  body.innerHTML = "";
+  body.append(el("div", { class: "admin-panel-head" },
+    el("div", {},
+      el("h2", {}, "Обслуживание"),
+      el("p", {}, "Действия для резервных копий и реестра."))));
+  body.append(el("div", { class: "admin-actions-grid" },
+    el("button", { class: "btn ghost", onclick: backup }, "💾 Создать бэкап"),
+    el("button", { class: "btn ghost", onclick: rebuildRegistry }, "↻ Пересобрать реестр"),
+    el("button", { class: "btn primary", onclick: openModal }, "＋ Новый анализ")));
 }
 
 function originControls(current) {
@@ -594,8 +688,11 @@ function init() {
   $("#btn-open-xlsx").addEventListener("click", openRegistry);
   $("#btn-backup").addEventListener("click", backup);
   $("#btn-admin").addEventListener("click", enterAdmin);
-  $("#admin-close").addEventListener("click", closeAdmin);
-  $("#admin-modal").addEventListener("click", (e) => { if (e.target.id === "admin-modal") closeAdmin(); });
+  $("#admin-exit").addEventListener("click", exitAdmin);
+  document.querySelectorAll(".admin-tab").forEach((b) => b.addEventListener("click", async () => {
+    state.adminTab = b.dataset.adminTab;
+    await renderAdminPanel();
+  }));
   $("#modal").addEventListener("click", (e) => { if (e.target.id === "modal") closeModal(); });
   $("#lightbox").addEventListener("click", closeLightbox);
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeLightbox(); });

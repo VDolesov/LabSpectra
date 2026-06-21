@@ -26,6 +26,7 @@ type Service struct {
 	lock          *storage.Lock
 	logFile       *os.File
 	adminPassword string
+	products      []string
 	mu            sync.Mutex
 }
 
@@ -55,6 +56,10 @@ func New(root string) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
+	products, err := storage.ReadProducts(fs.Paths.Products(), domain.Products())
+	if err != nil {
+		return nil, err
+	}
 	logFile, err := os.OpenFile(filepath.Join(fs.Paths.Logs(), "app.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
 		return nil, err
@@ -73,6 +78,7 @@ func New(root string) (*Service, error) {
 		lock:          lock,
 		logFile:       logFile,
 		adminPassword: adminPassword,
+		products:      products,
 	}
 
 	cards, broken, err := fs.ReadAllCards()
@@ -104,6 +110,72 @@ func (s *Service) Close() error {
 }
 
 func (s *Service) Root() string { return s.fs.Paths.Root }
+
+func (s *Service) Products() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.products...)
+}
+
+func (s *Service) AddProduct(product string) ([]string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	product = strings.TrimSpace(product)
+	if product == "" {
+		return nil, fmt.Errorf("продукт не должен быть пустым")
+	}
+	if s.validProductLocked(product) {
+		return append([]string(nil), s.products...), nil
+	}
+	s.products = append(s.products, product)
+	if err := storage.WriteProducts(s.fs.Paths.Products(), s.products); err != nil {
+		return nil, err
+	}
+	slog.Info("добавлен продукт", "product", product)
+	return append([]string(nil), s.products...), nil
+}
+
+func (s *Service) DeleteProduct(product string) ([]string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	product = strings.TrimSpace(product)
+	if product == "" {
+		return nil, fmt.Errorf("продукт не указан")
+	}
+	for _, a := range s.ix.All() {
+		if a.Product == product {
+			return nil, fmt.Errorf("продукт %q используется в анализе %s", product, a.ID)
+		}
+	}
+	idx := -1
+	for i, p := range s.products {
+		if p == product {
+			idx = i
+			break
+		}
+	}
+	if idx == -1 {
+		return nil, fmt.Errorf("продукт не найден: %q", product)
+	}
+	s.products = append(s.products[:idx], s.products[idx+1:]...)
+	if err := storage.WriteProducts(s.fs.Paths.Products(), s.products); err != nil {
+		return nil, err
+	}
+	slog.Info("удалён продукт", "product", product)
+	return append([]string(nil), s.products...), nil
+}
+
+func (s *Service) validProductLocked(product string) bool {
+	if product == "" {
+		return true
+	}
+	for _, p := range s.products {
+		if p == product {
+			return true
+		}
+	}
+	return false
+}
 
 type CreateInput struct {
 	AnalysisDate  string `json:"analysis_date"`
@@ -138,7 +210,7 @@ func (s *Service) Create(in CreateInput) (*domain.Analysis, error) {
 		status = string(domain.StatusNew)
 	}
 	product := strings.TrimSpace(in.Product)
-	if !domain.ValidProduct(product) {
+	if !s.validProductLocked(product) {
 		return nil, fmt.Errorf("неизвестный продукт: %q", product)
 	}
 
@@ -294,7 +366,7 @@ func (s *Service) Update(id string, in UpdateInput) (*domain.Analysis, error) {
 		return nil, fmt.Errorf("анализ ожидает подтверждения удаления: %s", id)
 	}
 	product := strings.TrimSpace(in.Product)
-	if !domain.ValidProduct(product) {
+	if !s.validProductLocked(product) {
 		return nil, fmt.Errorf("неизвестный продукт: %q", product)
 	}
 	a := cur.Clone()
