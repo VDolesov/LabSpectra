@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"io/fs"
-	"net"
 	"net/http"
 	"net/url"
 
@@ -27,11 +26,7 @@ func (s *Server) Handler() http.Handler { return guard(s.mux) }
 
 func guard(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !localHost(r.Host) {
-			http.Error(w, "forbidden host", http.StatusForbidden)
-			return
-		}
-		if o := r.Header.Get("Origin"); o != "" && !localOrigin(o) {
+		if o := r.Header.Get("Origin"); o != "" && !sameOrigin(o, r.Host) {
 			http.Error(w, "cross-origin forbidden", http.StatusForbidden)
 			return
 		}
@@ -43,28 +38,12 @@ func guard(next http.Handler) http.Handler {
 	})
 }
 
-func localHost(host string) bool {
-	h := host
-	if hh, _, err := net.SplitHostPort(host); err == nil {
-		h = hh
-	}
-	switch h {
-	case "127.0.0.1", "localhost", "::1", "[::1]":
-		return true
-	}
-	return false
-}
-
-func localOrigin(origin string) bool {
+func sameOrigin(origin, host string) bool {
 	u, err := url.Parse(origin)
 	if err != nil {
 		return false
 	}
-	switch u.Hostname() {
-	case "127.0.0.1", "localhost", "::1":
-		return true
-	}
-	return false
+	return u.Host == host
 }
 
 func (s *Server) routes() error {

@@ -22,14 +22,15 @@ func newTestHandler(t *testing.T) http.Handler {
 	return srv.Handler()
 }
 
-func TestGuardBlocksForeignHost(t *testing.T) {
+func TestGuardAllowsSameOriginAnyHost(t *testing.T) {
 	h := newTestHandler(t)
-	req := httptest.NewRequest("GET", "http://evil.example.com/api/meta", nil)
-	req.Host = "evil.example.com"
+	req := httptest.NewRequest("GET", "http://my-app.up.railway.app/api/meta", nil)
+	req.Host = "my-app.up.railway.app"
+	req.Header.Set("Origin", "http://my-app.up.railway.app")
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
-	if rec.Code != http.StatusForbidden {
-		t.Errorf("чужой Host: код %d, ожидался 403", rec.Code)
+	if rec.Code != http.StatusOK {
+		t.Errorf("свой Origin на публичном хосте: код %d, ожидался 200", rec.Code)
 	}
 }
 

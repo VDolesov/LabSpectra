@@ -1,0 +1,5 @@
+.git/
+lab_data/
+*.exe
+*.log
+docs/
