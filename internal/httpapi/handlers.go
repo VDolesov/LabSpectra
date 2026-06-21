@@ -36,7 +36,7 @@ func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"root":           root,
 		"statuses":       statuses,
-		"products":       domain.Products(),
+		"products":       s.svc.Products(),
 		"origin_acripol": domain.OriginAcripol,
 		"can_open_local": local,
 	})
@@ -146,6 +146,44 @@ func (s *Server) handleAdminPurge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleAdminProducts(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"items": s.svc.Products()})
+}
+
+func (s *Server) handleAdminAddProduct(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	var input struct {
+		Product string `json:"product"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeErr(w, http.StatusBadRequest, "некорректный JSON: "+err.Error())
+		return
+	}
+	products, err := s.svc.AddProduct(input.Product)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"items": products})
+}
+
+func (s *Server) handleAdminDeleteProduct(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	products, err := s.svc.DeleteProduct(r.PathValue("product"))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"items": products})
 }
 
 func (s *Server) handleAddAttachment(w http.ResponseWriter, r *http.Request) {

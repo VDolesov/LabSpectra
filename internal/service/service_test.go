@@ -280,6 +280,46 @@ func TestProductValidation(t *testing.T) {
 	}
 }
 
+func TestProductManagement(t *testing.T) {
+	root := t.TempDir()
+	svc, err := New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	products, err := svc.AddProduct("NEW-01")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.AddProduct("TEMP-REMOVE"); err != nil {
+		t.Fatal(err)
+	}
+	if products, err = svc.DeleteProduct("TEMP-REMOVE"); err != nil {
+		t.Fatalf("удаление неиспользуемого продукта: %v", err)
+	} else if contains(products, "TEMP-REMOVE") {
+		t.Fatalf("удалённый продукт остался в списке: %v", products)
+	}
+	if !contains(products, "NEW-01") {
+		t.Fatalf("новый продукт не добавлен: %v", products)
+	}
+	if _, err := svc.Create(CreateInput{Product: "NEW-01"}); err != nil {
+		t.Fatalf("анализ с новым продуктом не создан: %v", err)
+	}
+	if _, err := svc.DeleteProduct("NEW-01"); err == nil {
+		t.Error("удаление используемого продукта разрешено")
+	}
+	svc.Close()
+
+	svc2, err := New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc2.Close()
+	if !contains(svc2.Products(), "NEW-01") {
+		t.Errorf("продукт не сохранился после перезапуска: %v", svc2.Products())
+	}
+}
+
 func TestDateFilter(t *testing.T) {
 	svc := newTestService(t)
 	svc.Create(CreateInput{Product: "R2531", AnalysisDate: "2026-01-10", SynthesisDate: "2026-01-01"})
@@ -409,4 +449,13 @@ func TestAdminPasswordRequiredForPublicRun(t *testing.T) {
 
 func yearStr() string {
 	return strconv.Itoa(time.Now().Year())
+}
+
+func contains(list []string, v string) bool {
+	for _, x := range list {
+		if x == v {
+			return true
+		}
+	}
+	return false
 }

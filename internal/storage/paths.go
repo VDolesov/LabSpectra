@@ -18,6 +18,7 @@ func NewPaths(root string) Paths {
 }
 
 func (p Paths) Registry() string { return filepath.Join(p.Root, "registry.xlsx") }
+func (p Paths) Products() string { return filepath.Join(p.Root, "products.json") }
 func (p Paths) Samples() string  { return filepath.Join(p.Root, "samples") }
 func (p Paths) Backups() string  { return filepath.Join(p.Root, "backups") }
 func (p Paths) Logs() string     { return filepath.Join(p.Root, "logs") }

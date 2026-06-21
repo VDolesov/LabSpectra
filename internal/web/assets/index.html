@@ -79,6 +79,24 @@
         </section>
       </div>
     </section>
+
+    <section id="view-admin" class="view hidden">
+      <div class="admin-page">
+        <div class="admin-page-head">
+          <div>
+            <h1>Управление</h1>
+            <p>Заявки, препараты и служебные действия.</p>
+          </div>
+          <button id="admin-exit" class="btn ghost">Выйти</button>
+        </div>
+        <div class="admin-tabs">
+          <button class="admin-tab active" data-admin-tab="requests">Заявки</button>
+          <button class="admin-tab" data-admin-tab="products">Препараты</button>
+          <button class="admin-tab" data-admin-tab="maintenance">Обслуживание</button>
+        </div>
+        <div id="admin-content" class="admin-content"></div>
+      </div>
+    </section>
   </main>
 
   <div id="modal" class="modal-backdrop hidden">
@@ -106,16 +124,6 @@
           <button type="submit" class="btn primary">Создать анализ</button>
         </div>
       </form>
-    </div>
-  </div>
-
-  <div id="admin-modal" class="modal-backdrop hidden">
-    <div class="modal">
-      <div class="modal-head">
-        <h2>Недавно удалённые</h2>
-        <button class="icon-btn" id="admin-close">✕</button>
-      </div>
-      <div id="admin-body" class="admin-body"></div>
     </div>
   </div>
 
