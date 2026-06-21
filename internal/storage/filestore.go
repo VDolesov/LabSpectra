@@ -28,7 +28,7 @@ func NewFileStore(root string) (*FileStore, error) {
 }
 
 func (fs *FileStore) CreateSampleDirs(id string) error {
-	for _, kind := range []domain.Kind{domain.KindPhoto, domain.KindSpectrum, domain.KindReport} {
+	for _, kind := range []domain.Kind{domain.KindPhoto, domain.KindSpectrum} {
 		dir := fs.Paths.KindDir(id, kind.Folder())
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return fmt.Errorf("создание подпапки %s: %w", dir, err)

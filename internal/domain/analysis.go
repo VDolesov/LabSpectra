@@ -41,7 +41,6 @@ type Kind string
 const (
 	KindPhoto    Kind = "photo"
 	KindSpectrum Kind = "spectrum"
-	KindReport   Kind = "report"
 )
 
 func (k Kind) Folder() string {
@@ -50,8 +49,6 @@ func (k Kind) Folder() string {
 		return "photos"
 	case KindSpectrum:
 		return "spectra"
-	case KindReport:
-		return "reports"
 	default:
 		return ""
 	}
@@ -63,21 +60,18 @@ func (k Kind) Prefix() string {
 		return "photo"
 	case KindSpectrum:
 		return "spectrum"
-	case KindReport:
-		return "report"
 	default:
 		return "file"
 	}
 }
 
 func (k Kind) Valid() bool {
-	return k == KindPhoto || k == KindSpectrum || k == KindReport
+	return k == KindPhoto || k == KindSpectrum
 }
 
 type Attachments struct {
 	Photos  []string `json:"photos"`
 	Spectra []string `json:"spectra"`
-	Reports []string `json:"reports"`
 }
 
 func (a *Attachments) For(k Kind) *[]string {
@@ -86,8 +80,6 @@ func (a *Attachments) For(k Kind) *[]string {
 		return &a.Photos
 	case KindSpectrum:
 		return &a.Spectra
-	case KindReport:
-		return &a.Reports
 	default:
 		return nil
 	}
@@ -116,6 +108,5 @@ func (a *Analysis) Clone() *Analysis {
 	c := *a
 	c.Attachments.Photos = append([]string(nil), a.Attachments.Photos...)
 	c.Attachments.Spectra = append([]string(nil), a.Attachments.Spectra...)
-	c.Attachments.Reports = append([]string(nil), a.Attachments.Reports...)
 	return &c
 }

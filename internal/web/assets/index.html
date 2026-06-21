@@ -28,7 +28,7 @@
       <button class="seg active" data-view="table">▦ Таблица</button>
       <button class="seg" data-view="cards">🗂 Карточка</button>
     </div>
-    <input id="search" type="search" placeholder="Поиск: номер опыта, продукт, партия, образец…" autocomplete="off" />
+    <input id="search" type="search" placeholder="Поиск: номер опыта, продукт, партия…" autocomplete="off" />
     <div id="status-filters" class="filters"></div>
     <span id="list-count" class="count">0 анализов</span>
   </nav>
@@ -53,12 +53,11 @@
             <th>Продукт</th>
             <th>Происхождение</th>
             <th>Партия</th>
-            <th>Образец</th>
+            <th>Дополнительно</th>
             <th>Результат анализа</th>
             <th>Статус</th>
             <th>Спектры</th>
             <th>Фото</th>
-            <th>Отчёты</th>
             <th>Комментарий</th>
           </tr>
         </thead>
@@ -97,7 +96,7 @@
           <label id="create-origin-source-wrap" class="hidden">Источник<input type="text" id="create-origin-source" placeholder="название стороннего источника" /></label>
           <label>Партия<input type="text" name="batch" placeholder="123" /></label>
         </div>
-        <label>Название образца<input type="text" name="sample_name" placeholder="Образец 1" /></label>
+        <label>Дополнительно<input type="text" name="sample_name" placeholder="доп. сведения" /></label>
         <label>Описание<textarea name="description" rows="2"></textarea></label>
         <label>Краткий результат<input type="text" name="short_result" placeholder="Соответствует" /></label>
         <label>Комментарий<textarea name="comment" rows="2"></textarea></label>

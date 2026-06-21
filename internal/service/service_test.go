@@ -39,7 +39,7 @@ func TestCreateProducesFoldersCardAndRegistry(t *testing.T) {
 
 	root := svc.Root()
 
-	for _, sub := range []string{"photos", "spectra", "reports"} {
+	for _, sub := range []string{"photos", "spectra"} {
 		dir := filepath.Join(root, "samples", a.ID, sub)
 		if st, err := os.Stat(dir); err != nil || !st.IsDir() {
 			t.Errorf("нет подпапки %s", dir)

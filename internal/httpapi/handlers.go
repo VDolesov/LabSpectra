@@ -98,7 +98,7 @@ func (s *Server) handleAddAttachment(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	kind := domain.Kind(r.URL.Query().Get("kind"))
 	if !kind.Valid() {
-		writeErr(w, http.StatusBadRequest, "неизвестный тип вложения (kind): photo|spectrum|report")
+		writeErr(w, http.StatusBadRequest, "неизвестный тип вложения (kind): photo|spectrum")
 		return
 	}
 	if err := r.ParseMultipartForm(64 << 20); err != nil {

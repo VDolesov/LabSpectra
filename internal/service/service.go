@@ -131,7 +131,7 @@ func (s *Service) Create(in CreateInput) (*domain.Analysis, error) {
 		ShortResult:   in.ShortResult,
 		Status:        status,
 		Comment:       in.Comment,
-		Attachments:   domain.Attachments{Photos: []string{}, Spectra: []string{}, Reports: []string{}},
+		Attachments:   domain.Attachments{Photos: []string{}, Spectra: []string{}},
 		CreatedAt:     now.Format(time.RFC3339),
 		UpdatedAt:     now.Format(time.RFC3339),
 		Committed:     false,

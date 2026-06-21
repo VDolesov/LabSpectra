@@ -194,7 +194,7 @@ function renderTable() {
   tbody.innerHTML = "";
   if (state.items.length === 0) {
     tbody.append(el("tr", { class: "empty-row" },
-      el("td", { colspan: "13" }, "Пока нет анализов. Нажмите «＋ Новый анализ», чтобы создать первый.")));
+      el("td", { colspan: "12" }, "Пока нет анализов. Нажмите «＋ Новый анализ», чтобы создать первый.")));
     return;
   }
   state.items.forEach((a) => {
@@ -212,7 +212,6 @@ function renderTable() {
       statusCell(a),
       el("td", {}, fileIcons(a.id, a.attachments.spectra, "📕")),
       el("td", {}, photoCell(a.id, a.attachments.photos)),
-      el("td", {}, fileIcons(a.id, a.attachments.reports, "📄")),
       editableCell(a, "comment", "text", a.comment || "—", "c-comment")));
   });
 }
@@ -288,7 +287,7 @@ function renderDetail(a) {
         origin.selLabel,
         origin.srcLabel,
         field("Партия", "batch", a.batch)),
-      field("Название образца", "sample_name", a.sample_name),
+      field("Дополнительно", "sample_name", a.sample_name),
       field("Описание", "description", a.description, "textarea"),
       field("Краткий результат", "short_result", a.short_result),
       field("Комментарий", "comment", a.comment, "textarea")));
@@ -296,8 +295,7 @@ function renderDetail(a) {
   const attach = el("div", { class: "section" },
     el("h3", {}, "Вложения"),
     attachGroup(a, "Фотографии", "photo", a.attachments.photos, "image/*", true),
-    attachGroup(a, "Спектры", "spectrum", a.attachments.spectra, ".pdf,.txt", false),
-    attachGroup(a, "Отчёты", "report", a.attachments.reports, ".pdf,.docx", false));
+    attachGroup(a, "Спектры", "spectrum", a.attachments.spectra, ".pdf,.txt", false));
 
   detail.append(el("div", { class: "card-wrap" }, head, fields, attach));
 }
