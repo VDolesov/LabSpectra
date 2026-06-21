@@ -37,6 +37,7 @@ func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
 		"root":           root,
 		"statuses":       statuses,
 		"products":       s.svc.Products(),
+		"sources":        domain.Sources(),
 		"origin_acripol": domain.OriginAcripol,
 		"can_open_local": local,
 	})

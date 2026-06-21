@@ -340,6 +340,26 @@ func TestDateFilter(t *testing.T) {
 	}
 }
 
+func TestSourceValidation(t *testing.T) {
+	svc := newTestService(t)
+	a, err := svc.Create(CreateInput{Product: "R2531", Source: "лаб"})
+	if err != nil {
+		t.Fatalf("валидное происхождение отклонено: %v", err)
+	}
+	if a.Source != "лаб" {
+		t.Fatalf("Source=%q, ожидалось лаб", a.Source)
+	}
+	if _, err := svc.Create(CreateInput{Product: "R2531", Source: "склад"}); err == nil {
+		t.Error("невалидное происхождение принято при создании")
+	}
+	if _, err := svc.Update(a.ID, UpdateInput{Product: "R2531", Source: "посылка"}); err != nil {
+		t.Fatalf("валидное происхождение отклонено при обновлении: %v", err)
+	}
+	if _, err := svc.Update(a.ID, UpdateInput{Product: "R2531", Source: "склад"}); err == nil {
+		t.Error("невалидное происхождение принято при обновлении")
+	}
+}
+
 func TestReconcileRebuildsOnSchemaChange(t *testing.T) {
 	root := t.TempDir()
 	svc, _ := New(root)

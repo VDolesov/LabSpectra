@@ -52,7 +52,8 @@
             <th data-key="analysis_date">Дата анализа</th>
             <th data-key="synthesis_date">Дата синтеза</th>
             <th data-key="product">Продукт</th>
-            <th data-key="origin">Происхождение</th>
+            <th data-key="origin">Производитель</th>
+            <th data-key="source">Происхождение</th>
             <th data-key="batch">Партия</th>
             <th data-key="sample_name">Дополнительно</th>
             <th data-key="short_result">Результат анализа</th>
@@ -111,8 +112,9 @@
           <label>Дата синтеза<input type="date" name="synthesis_date" /></label>
           <label>Продукт<select name="product" id="create-product"></select></label>
           <label>Статус<select name="status" id="create-status"></select></label>
-          <label>Происхождение<select id="create-origin"></select></label>
-          <label id="create-origin-source-wrap" class="hidden">Источник<input type="text" id="create-origin-source" placeholder="название стороннего источника" /></label>
+          <label>Производитель<select id="create-origin"></select></label>
+          <label id="create-origin-source-wrap" class="hidden">Сторонний производитель<input type="text" id="create-origin-source" placeholder="название производителя" /></label>
+          <label>Происхождение<select name="source" id="create-source"></select></label>
           <label>Партия<input type="text" name="batch" placeholder="123" /></label>
         </div>
         <label>Дополнительно<input type="text" name="sample_name" placeholder="доп. сведения" /></label>

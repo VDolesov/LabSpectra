@@ -24,6 +24,7 @@ var registryHeaders = []string{
 	"дата анализа",
 	"дата синтеза",
 	"продукт",
+	"производитель",
 	"происхождение",
 	"партия",
 	"дополнительно",
@@ -107,7 +108,7 @@ func (r *Registry) writeHeader(f *excelize.File) error {
 		f.SetCellStyle(sheetName, "A1", lastCol+"1", style)
 	}
 
-	widths := []float64{14, 12, 12, 12, 16, 12, 20, 28, 24, 10, 24, 28, 28, 24, 20, 20}
+	widths := []float64{14, 12, 12, 12, 18, 14, 12, 20, 28, 24, 10, 24, 28, 28, 24, 20, 20}
 	for i, w := range widths {
 		col, _ := excelize.ColumnNumberToName(i + 1)
 		f.SetColWidth(sheetName, col, col, w)
@@ -129,6 +130,7 @@ func (r *Registry) rowValues(a *domain.Analysis) []interface{} {
 		a.SynthesisDate,
 		a.Product,
 		a.Origin,
+		a.Source,
 		a.Batch,
 		a.SampleName,
 		a.Description,

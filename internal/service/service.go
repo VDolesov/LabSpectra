@@ -182,6 +182,7 @@ type CreateInput struct {
 	SynthesisDate string `json:"synthesis_date"`
 	Product       string `json:"product"`
 	Origin        string `json:"origin"`
+	Source        string `json:"source"`
 	Batch         string `json:"batch"`
 	SampleName    string `json:"sample_name"`
 	Description   string `json:"description"`
@@ -213,6 +214,10 @@ func (s *Service) Create(in CreateInput) (*domain.Analysis, error) {
 	if !s.validProductLocked(product) {
 		return nil, fmt.Errorf("неизвестный продукт: %q", product)
 	}
+	source := strings.TrimSpace(in.Source)
+	if !domain.ValidSource(source) {
+		return nil, fmt.Errorf("неизвестное происхождение: %q", source)
+	}
 
 	a := &domain.Analysis{
 		SchemaVersion: domain.SchemaVersion,
@@ -221,6 +226,7 @@ func (s *Service) Create(in CreateInput) (*domain.Analysis, error) {
 		SynthesisDate: strings.TrimSpace(in.SynthesisDate),
 		Product:       product,
 		Origin:        strings.TrimSpace(in.Origin),
+		Source:        source,
 		Batch:         strings.TrimSpace(in.Batch),
 		SampleName:    strings.TrimSpace(in.SampleName),
 		Description:   in.Description,
@@ -346,6 +352,7 @@ type UpdateInput struct {
 	SynthesisDate string `json:"synthesis_date"`
 	Product       string `json:"product"`
 	Origin        string `json:"origin"`
+	Source        string `json:"source"`
 	Batch         string `json:"batch"`
 	SampleName    string `json:"sample_name"`
 	Description   string `json:"description"`
@@ -369,11 +376,16 @@ func (s *Service) Update(id string, in UpdateInput) (*domain.Analysis, error) {
 	if !s.validProductLocked(product) {
 		return nil, fmt.Errorf("неизвестный продукт: %q", product)
 	}
+	source := strings.TrimSpace(in.Source)
+	if !domain.ValidSource(source) {
+		return nil, fmt.Errorf("неизвестное происхождение: %q", source)
+	}
 	a := cur.Clone()
 	a.AnalysisDate = strings.TrimSpace(in.AnalysisDate)
 	a.SynthesisDate = strings.TrimSpace(in.SynthesisDate)
 	a.Product = product
 	a.Origin = strings.TrimSpace(in.Origin)
+	a.Source = source
 	a.Batch = strings.TrimSpace(in.Batch)
 	a.SampleName = strings.TrimSpace(in.SampleName)
 	a.Description = in.Description
