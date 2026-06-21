@@ -33,6 +33,14 @@
     <span id="list-count" class="count">0 анализов</span>
   </nav>
 
+  <nav class="datefilters">
+    <span class="df-label">Дата анализа</span>
+    <input type="date" id="f-a-from" /><span class="df-dash">–</span><input type="date" id="f-a-to" />
+    <span class="df-label">Дата синтеза</span>
+    <input type="date" id="f-s-from" /><span class="df-dash">–</span><input type="date" id="f-s-to" />
+    <button id="f-reset" class="btn ghost small">Сбросить даты</button>
+  </nav>
+
   <main class="main">
     <section id="view-table" class="view">
       <div class="table-hint">✎ Двойной клик по ячейке — изменить значение. Клик по ID — открыть карточку с файлами.</div>
@@ -40,8 +48,10 @@
         <thead>
           <tr>
             <th>ID опыта</th>
-            <th>Дата</th>
+            <th>Дата анализа</th>
+            <th>Дата синтеза</th>
             <th>Продукт</th>
+            <th>Происхождение</th>
             <th>Партия</th>
             <th>Образец</th>
             <th>Результат анализа</th>
@@ -80,10 +90,11 @@
       <form id="create-form" class="form">
         <div class="grid2">
           <label>Дата анализа<input type="date" name="analysis_date" /></label>
-          <label>Статус
-            <select name="status" id="create-status"></select>
-          </label>
-          <label>Продукт<input type="text" name="product" placeholder="Например, Продукт А" /></label>
+          <label>Дата синтеза<input type="date" name="synthesis_date" /></label>
+          <label>Продукт<select name="product" id="create-product"></select></label>
+          <label>Статус<select name="status" id="create-status"></select></label>
+          <label>Происхождение<select id="create-origin"></select></label>
+          <label id="create-origin-source-wrap" class="hidden">Источник<input type="text" id="create-origin-source" placeholder="название стороннего источника" /></label>
           <label>Партия<input type="text" name="batch" placeholder="123" /></label>
         </div>
         <label>Название образца<input type="text" name="sample_name" placeholder="Образец 1" /></label>

@@ -1,13 +1,16 @@
 "use strict";
 
 const state = {
-  meta: { root: "", statuses: [] },
+  meta: { root: "", statuses: [], products: [], origin_acripol: "АКРИПОЛ" },
   items: [],
   selectedId: null,
   query: "",
   status: "",
+  dates: { aFrom: "", aTo: "", sFrom: "", sTo: "" },
   view: "table",
 };
+
+let editOriginRead = null;
 
 const $ = (sel) => document.querySelector(sel);
 const el = (tag, props = {}, ...kids) => {
@@ -61,12 +64,18 @@ async function loadMeta() {
   state.meta = await api("/api/meta");
   renderStatusFilters();
   renderStatusSelect();
+  renderCreateProduct();
+  setupCreateOrigin();
 }
 
 async function loadList() {
   const params = new URLSearchParams();
   if (state.query) params.set("q", state.query);
   if (state.status) params.set("status", state.status);
+  if (state.dates.aFrom) params.set("a_from", state.dates.aFrom);
+  if (state.dates.aTo) params.set("a_to", state.dates.aTo);
+  if (state.dates.sFrom) params.set("s_from", state.dates.sFrom);
+  if (state.dates.sTo) params.set("s_to", state.dates.sTo);
   const data = await api("/api/analyses?" + params.toString());
   state.items = data.items || [];
   render();
@@ -129,6 +138,10 @@ function beginEdit(td, item, field, type) {
   if (type === "status") {
     input = el("select", { class: "cell-edit" },
       ...state.meta.statuses.map((s) => el("option", s === current ? { value: s, selected: "" } : { value: s }, s)));
+  } else if (type === "product") {
+    input = el("select", { class: "cell-edit" },
+      el("option", current === "" ? { value: "", selected: "" } : { value: "" }, "—"),
+      ...state.meta.products.map((p) => el("option", p === current ? { value: p, selected: "" } : { value: p }, p)));
   } else {
     input = el("input", { class: "cell-edit", type: type === "date" ? "date" : "text", value: current });
   }
@@ -150,14 +163,16 @@ function beginEdit(td, item, field, type) {
     if (ev.key === "Enter") { ev.preventDefault(); input.blur(); }
     else if (ev.key === "Escape") { done = true; renderTable(); }
   });
-  if (type === "status") input.addEventListener("change", () => input.blur());
+  if (type === "status" || type === "product") input.addEventListener("change", () => input.blur());
 }
 
 async function saveField(item, field, val) {
   const u = { ...item, [field]: val };
   const payload = {
     analysis_date: u.analysis_date || "",
+    synthesis_date: u.synthesis_date || "",
     product: u.product || "",
+    origin: u.origin || "",
     batch: u.batch || "",
     sample_name: u.sample_name || "",
     description: u.description || "",
@@ -179,7 +194,7 @@ function renderTable() {
   tbody.innerHTML = "";
   if (state.items.length === 0) {
     tbody.append(el("tr", { class: "empty-row" },
-      el("td", { colspan: "11" }, "Пока нет анализов. Нажмите «＋ Новый анализ», чтобы создать первый.")));
+      el("td", { colspan: "13" }, "Пока нет анализов. Нажмите «＋ Новый анализ», чтобы создать первый.")));
     return;
   }
   state.items.forEach((a) => {
@@ -188,7 +203,9 @@ function renderTable() {
     tbody.append(el("tr", { class: "reg-row" },
       idCell,
       editableCell(a, "analysis_date", "date", fmtDay(a.analysis_date)),
-      editableCell(a, "product", "text", a.product || "—"),
+      editableCell(a, "synthesis_date", "date", fmtDay(a.synthesis_date)),
+      editableCell(a, "product", "product", a.product || "—"),
+      editableCell(a, "origin", "text", a.origin || "—"),
       editableCell(a, "batch", "text", a.batch || "—"),
       editableCell(a, "sample_name", "text", a.sample_name || "—"),
       editableCell(a, "short_result", "text", a.short_result || "—"),
@@ -245,6 +262,11 @@ function renderDetail(a) {
 
   const statusSel = el("select", { name: "status" },
     ...state.meta.statuses.map((s) => el("option", s === a.status ? { value: s, selected: "" } : { value: s }, s)));
+  const productSel = el("select", { name: "product" },
+    el("option", (a.product || "") === "" ? { value: "", selected: "" } : { value: "" }, "—"),
+    ...state.meta.products.map((p) => el("option", p === a.product ? { value: p, selected: "" } : { value: p }, p)));
+  const origin = originControls(a.origin || "");
+  editOriginRead = origin.read;
 
   const head = el("div", { class: "card-head" },
     el("div", {},
@@ -260,8 +282,11 @@ function renderDetail(a) {
     el("form", { id: "edit-form", class: "form", style: "padding:0" },
       el("div", { class: "grid2" },
         field("Дата анализа", "analysis_date", a.analysis_date, "date"),
+        field("Дата синтеза", "synthesis_date", a.synthesis_date, "date"),
+        el("label", {}, "Продукт", productSel),
         el("label", {}, "Статус", statusSel),
-        field("Продукт", "product", a.product),
+        origin.selLabel,
+        origin.srcLabel,
         field("Партия", "batch", a.batch)),
       field("Название образца", "sample_name", a.sample_name),
       field("Описание", "description", a.description, "textarea"),
@@ -312,6 +337,7 @@ function attachGroup(a, label, kind, list, accept, isImage) {
 async function saveCard(id) {
   const fd = new FormData($("#edit-form"));
   const payload = Object.fromEntries(fd.entries());
+  if (editOriginRead) payload.origin = editOriginRead();
   try {
     await api("/api/analyses/" + encodeURIComponent(id), {
       method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
@@ -360,17 +386,59 @@ async function deleteAnalysis(id) {
   } catch (e) { toast(e.message, "err"); }
 }
 
+function originControls(current) {
+  const acripol = state.meta.origin_acripol;
+  const isAcripol = current === acripol;
+  const isExternal = current && !isAcripol;
+  const sel = el("select", {},
+    el("option", current === "" ? { value: "", selected: "" } : { value: "" }, "—"),
+    el("option", isAcripol ? { value: acripol, selected: "" } : { value: acripol }, acripol),
+    el("option", isExternal ? { value: "__ext__", selected: "" } : { value: "__ext__" }, "стороннее"));
+  const src = el("input", { type: "text", value: isExternal ? current : "", placeholder: "название стороннего источника" });
+  const srcLabel = el("label", { class: isExternal ? "" : "hidden" }, "Источник", src);
+  sel.addEventListener("change", () => srcLabel.classList.toggle("hidden", sel.value !== "__ext__"));
+  const read = () => (sel.value === "__ext__" ? src.value.trim() : sel.value);
+  return { selLabel: el("label", {}, "Происхождение", sel), srcLabel, read };
+}
+
 function renderStatusSelect() {
   const sel = $("#create-status");
   sel.innerHTML = "";
   state.meta.statuses.forEach((s) => sel.append(el("option", { value: s }, s)));
 }
-function openModal() { $("#create-form").reset(); $("#modal").classList.remove("hidden"); }
+
+function renderCreateProduct() {
+  const sel = $("#create-product");
+  sel.innerHTML = "";
+  sel.append(el("option", { value: "" }, "—"));
+  state.meta.products.forEach((p) => sel.append(el("option", { value: p }, p)));
+}
+
+function setupCreateOrigin() {
+  const sel = $("#create-origin");
+  sel.innerHTML = "";
+  sel.append(el("option", { value: "" }, "—"));
+  sel.append(el("option", { value: state.meta.origin_acripol }, state.meta.origin_acripol));
+  sel.append(el("option", { value: "__ext__" }, "стороннее"));
+  sel.onchange = () => $("#create-origin-source-wrap").classList.toggle("hidden", sel.value !== "__ext__");
+}
+
+function createOriginValue() {
+  const sel = $("#create-origin");
+  return sel.value === "__ext__" ? $("#create-origin-source").value.trim() : sel.value;
+}
+
+function openModal() {
+  $("#create-form").reset();
+  $("#create-origin-source-wrap").classList.add("hidden");
+  $("#modal").classList.remove("hidden");
+}
 function closeModal() { $("#modal").classList.add("hidden"); }
 
 async function submitCreate(e) {
   e.preventDefault();
   const payload = Object.fromEntries(new FormData(e.target).entries());
+  payload.origin = createOriginValue();
   try {
     const a = await api("/api/analyses", {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
@@ -418,6 +486,17 @@ function init() {
   $("#btn-backup").addEventListener("click", backup);
   $("#modal").addEventListener("click", (e) => { if (e.target.id === "modal") closeModal(); });
   $("#search").addEventListener("input", debounce((e) => { state.query = e.target.value.trim(); loadList(); }, 250));
+
+  const bindDate = (sel, key) => $(sel).addEventListener("change", (e) => { state.dates[key] = e.target.value; loadList(); });
+  bindDate("#f-a-from", "aFrom");
+  bindDate("#f-a-to", "aTo");
+  bindDate("#f-s-from", "sFrom");
+  bindDate("#f-s-to", "sTo");
+  $("#f-reset").addEventListener("click", () => {
+    ["#f-a-from", "#f-a-to", "#f-s-from", "#f-s-to"].forEach((s) => ($(s).value = ""));
+    state.dates = { aFrom: "", aTo: "", sFrom: "", sTo: "" };
+    loadList();
+  });
 
   loadMeta().then(loadList).catch((e) => toast(e.message, "err"));
 }

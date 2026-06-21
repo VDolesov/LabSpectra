@@ -69,6 +69,12 @@ body {
 #search:focus { border-color: var(--brand); background: #fff; }
 .count { margin-left: auto; font-size: 12.5px; color: var(--ink-soft); white-space: nowrap; }
 
+.datefilters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 20px; background: var(--panel); border-bottom: 1px solid var(--line); font-size: 13px; color: var(--ink-soft); }
+.datefilters input[type=date] { padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: #fbfcfe; font: inherit; font-size: 13px; }
+.df-label { font-weight: 600; margin-left: 8px; }
+.df-label:first-child { margin-left: 0; }
+.df-dash { color: var(--ink-soft); }
+
 .btn {
   border: 1px solid transparent; border-radius: var(--radius-sm);
   padding: 9px 16px; font-size: 14px; font-weight: 600; cursor: pointer;
