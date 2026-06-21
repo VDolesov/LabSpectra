@@ -1,7 +1,7 @@
 "use strict";
 
 const state = {
-  meta: { root: "", statuses: [], products: [], origin_acripol: "АКРИПОЛ" },
+  meta: { root: "", statuses: [], products: [], origin_acripol: "АКРИПОЛ", can_open_local: false },
   items: [],
   selectedId: null,
   query: "",
@@ -68,6 +68,12 @@ async function loadMeta() {
   renderStatusSelect();
   renderCreateProduct();
   setupCreateOrigin();
+  applyMetaVisibility();
+}
+
+function applyMetaVisibility() {
+  const canOpenLocal = !!state.meta.can_open_local;
+  $("#btn-open-xlsx").classList.toggle("hidden", !canOpenLocal);
 }
 
 async function loadList() {
@@ -301,14 +307,19 @@ function renderDetail(a) {
   const origin = originControls(a.origin || "");
   editOriginRead = origin.read;
 
+  const actions = [
+    el("button", { class: "btn del small", onclick: () => deleteAnalysis(a.id) }, "🗑 Удалить"),
+  ];
+  if (state.meta.can_open_local) {
+    actions.push(el("button", { class: "btn ghost small", onclick: () => openFolder(a.id) }, "📂 Открыть папку"));
+  }
+  actions.push(el("button", { class: "btn primary small", onclick: () => saveCard(a.id) }, "💾 Сохранить"));
+
   const head = el("div", { class: "card-head" },
     el("div", {},
       el("div", { class: "card-id" }, a.id),
       el("div", { class: "card-sub" }, `создан ${fmtDateTime(a.created_at)} · изменён ${fmtDateTime(a.updated_at)}`)),
-    el("div", { class: "card-head-actions" },
-      el("button", { class: "btn del small", onclick: () => deleteAnalysis(a.id) }, "🗑 Удалить"),
-      el("button", { class: "btn ghost small", onclick: () => openFolder(a.id) }, "📂 Открыть папку"),
-      el("button", { class: "btn primary small", onclick: () => saveCard(a.id) }, "💾 Сохранить")));
+    el("div", { class: "card-head-actions" }, ...actions));
 
   const fields = el("div", { class: "section" },
     el("h3", {}, "Данные анализа"),
@@ -420,16 +431,21 @@ async function deleteAnalysis(id) {
 
 const adminHdr = () => ({ "X-Admin-Password": state.admin });
 
-async function enterAdmin() {
+async function ensureAdmin() {
   if (!state.admin) {
     const pw = prompt("Пароль администратора:");
-    if (!pw) return;
+    if (!pw) return false;
     try {
       await api("/api/admin/verify", { method: "POST", headers: { "X-Admin-Password": pw } });
       state.admin = pw;
       toast("Режим администратора включён", "ok");
-    } catch (e) { toast("Неверный пароль", "err"); return; }
+    } catch (e) { toast("Неверный пароль", "err"); return false; }
   }
+  return true;
+}
+
+async function enterAdmin() {
+  if (!(await ensureAdmin())) return;
   $("#admin-modal").classList.remove("hidden");
   await renderAdminDeleted();
 }
@@ -544,8 +560,9 @@ async function submitCreate(e) {
 
 async function rebuildRegistry() {
   if (!confirm("Пересобрать registry.xlsx из карточек card.json?")) return;
+  if (!(await ensureAdmin())) return;
   try {
-    const r = await api("/api/registry/rebuild", { method: "POST" });
+    const r = await api("/api/registry/rebuild", { method: "POST", headers: adminHdr() });
     toast(`Реестр пересобран: ${r.rebuilt} строк`, "ok");
   } catch (e) { toast(e.message, "err"); }
 }
@@ -558,8 +575,9 @@ async function openRegistry() {
 }
 
 async function backup() {
+  if (!(await ensureAdmin())) return;
   try {
-    await api("/api/backup", { method: "POST" });
+    await api("/api/backup", { method: "POST", headers: adminHdr() });
     toast("Резервная копия создана в backups/", "ok");
   } catch (e) { toast(e.message, "err"); }
 }
