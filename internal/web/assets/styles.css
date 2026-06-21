@@ -118,6 +118,9 @@ body {
   color: var(--ink-soft); white-space: nowrap; z-index: 1;
 }
 #reg-table td { padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+#reg-table th[data-key] { cursor: pointer; user-select: none; }
+#reg-table th[data-key]:hover { background: #eef3ff; }
+.sort-arrow { color: var(--brand); font-size: 11px; }
 .reg-row:hover { background: #f7f9fd; }
 .c-id { font-weight: 700; white-space: nowrap; }
 .id-link { color: var(--brand); font-weight: 700; text-decoration: none; }

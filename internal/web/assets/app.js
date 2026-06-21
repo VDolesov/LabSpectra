@@ -7,6 +7,7 @@ const state = {
   query: "",
   status: "",
   dates: { aFrom: "", aTo: "", sFrom: "", sTo: "" },
+  sort: { key: "", dir: 1 },
   view: "table",
 };
 
@@ -197,6 +198,30 @@ async function saveField(item, field, val) {
   } catch (e) { toast(e.message, "err"); renderTable(); }
 }
 
+function sortedItems() {
+  const items = state.items.slice();
+  const k = state.sort.key;
+  if (k) {
+    const dir = state.sort.dir;
+    items.sort((a, b) => {
+      const av = (a[k] || "").toString().toLowerCase();
+      const bv = (b[k] || "").toString().toLowerCase();
+      if (av < bv) return -dir;
+      if (av > bv) return dir;
+      return 0;
+    });
+  }
+  return items;
+}
+
+function renderHeaderArrows() {
+  document.querySelectorAll("#reg-table th[data-key]").forEach((th) => {
+    const arrow = th.querySelector(".sort-arrow");
+    if (!arrow) return;
+    arrow.textContent = th.dataset.key === state.sort.key ? (state.sort.dir === 1 ? " ▲" : " ▼") : "";
+  });
+}
+
 function renderTable() {
   const tbody = $("#reg-tbody");
   tbody.innerHTML = "";
@@ -205,7 +230,7 @@ function renderTable() {
       el("td", { colspan: "12" }, "Пока нет анализов. Нажмите «＋ Новый анализ», чтобы создать первый.")));
     return;
   }
-  state.items.forEach((a) => {
+  sortedItems().forEach((a) => {
     const idCell = el("td", { class: "c-id" },
       el("a", { class: "id-link", href: "#", title: "Открыть карточку", onclick: (e) => { e.preventDefault(); openCard(a.id); } }, a.id));
     tbody.append(el("tr", { class: "reg-row" },
@@ -493,6 +518,16 @@ function init() {
   $("#modal").addEventListener("click", (e) => { if (e.target.id === "modal") closeModal(); });
   $("#lightbox").addEventListener("click", closeLightbox);
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeLightbox(); });
+
+  document.querySelectorAll("#reg-table th[data-key]").forEach((th) => {
+    th.append(el("span", { class: "sort-arrow" }, ""));
+    th.addEventListener("click", () => {
+      if (state.sort.key === th.dataset.key) state.sort.dir = -state.sort.dir;
+      else { state.sort.key = th.dataset.key; state.sort.dir = 1; }
+      renderHeaderArrows();
+      renderTable();
+    });
+  });
   $("#search").addEventListener("input", debounce((e) => { state.query = e.target.value.trim(); loadList(); }, 250));
 
   const bindDate = (sel, key) => $(sel).addEventListener("change", (e) => { state.dates[key] = e.target.value; loadList(); });
