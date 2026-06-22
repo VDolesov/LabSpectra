@@ -1,7 +1,7 @@
 "use strict";
 
 const state = {
-  meta: { root: "", statuses: [], products: [], sources: [], characteristic_options: [], characteristics: {}, origin_acripol: "АКРИПОЛ", can_open_local: false },
+  meta: { root: "", statuses: [], products: [], sources: [], characteristic_options: [], characteristics: [], origin_acripol: "АКРИПОЛ", can_open_local: false },
   items: [],
   selectedId: null,
   query: "",
@@ -10,7 +10,6 @@ const state = {
   sort: { key: "", dir: 1 },
   admin: "",
   adminTab: "requests",
-  characteristicsProduct: "",
   previousView: "table",
   view: "table",
 };
@@ -75,7 +74,6 @@ async function loadMeta() {
   setupCreateOrigin();
   renderCreateCharacteristicSelect();
   renderCreateCharacteristicsList();
-  renderCharacteristicsProductSelect();
   if (state.view === "characteristics") renderCharacteristicsView();
   applyMetaVisibility();
 }
@@ -249,7 +247,7 @@ async function saveField(item, field, val) {
     short_result: u.short_result || "",
     status: u.status || "",
     comment: u.comment || "",
-    characteristics: field === "product" ? [] : (u.characteristics || []),
+    characteristics: u.characteristics || [],
   };
   try {
     await api("/api/analyses/" + encodeURIComponent(item.id), {
@@ -400,13 +398,6 @@ function renderDetail(a) {
       field("Комментарий", "comment", a.comment, "textarea")));
 
   const chars = characteristicsSection(a);
-  productSel.addEventListener("change", () => {
-    const list = chars.querySelector("#edit-characteristics-list");
-    list.innerHTML = "";
-    ensureCharacteristicsEmpty(list);
-    const current = chars.querySelector("#edit-characteristic-select");
-    current.replaceWith(characteristicSelect(productSel.value || "", [], "edit-characteristic-select"));
-  });
 
   const attach = el("div", { class: "section" },
     el("h3", {}, "Вложения"),
@@ -416,8 +407,7 @@ function renderDetail(a) {
 }
 
 function characteristicsSection(a) {
-  const product = a.product || "";
-  const select = characteristicSelect(product, [], "edit-characteristic-select");
+  const select = characteristicSelect([], "edit-characteristic-select");
   const list = el("div", { id: "edit-characteristics-list", class: "characteristics-list" });
   const section = el("div", { class: "section" },
     el("h3", {}, "Характеристики"),
@@ -429,16 +419,13 @@ function characteristicsSection(a) {
   return section;
 }
 
-function characteristicsForProduct(product) {
-  if (!product) return [];
-  const catalog = state.meta.characteristics || {};
-  if (Object.prototype.hasOwnProperty.call(catalog, product)) return catalog[product] || [];
-  return state.meta.characteristic_options || [];
+function characteristicsList() {
+  return state.meta.characteristics || state.meta.characteristic_options || [];
 }
 
-function characteristicSelect(product, selected = [], id = "") {
+function characteristicSelect(selected = [], id = "") {
   const selectedSet = new Set(selected);
-  const options = characteristicsForProduct(product).filter((name) => !selectedSet.has(name));
+  const options = characteristicsList().filter((name) => !selectedSet.has(name));
   const props = id ? { id } : {};
   const select = el("select", props);
   select.append(el("option", { value: "" }, options.length ? "Выберите характеристику" : "Нет настроенных характеристик"));
@@ -742,49 +729,43 @@ async function adminDeleteProduct(product) {
 function renderAdminCharacteristics() {
   const body = $("#admin-content");
   body.innerHTML = "";
-  const productSel = el("select", { id: "admin-characteristic-product" },
-    ...state.meta.products.map((p) => el("option", { value: p }, p)));
   const nameInput = el("input", { type: "text", placeholder: "например вязкость" });
   const list = el("div", { id: "admin-characteristics-list", class: "product-list" });
   const renderList = () => {
     list.innerHTML = "";
-    const product = productSel.value;
-    const items = characteristicsForProduct(product);
+    const items = state.meta.characteristics || [];
     if (items.length === 0) {
-      list.append(el("div", { class: "admin-empty" }, "Для этого продукта характеристики ещё не настроены."));
+      list.append(el("div", { class: "admin-empty" }, "Характеристики ещё не добавлены."));
       return;
     }
     items.forEach((name) => list.append(el("div", { class: "product-row" },
       el("span", {}, name),
-      el("button", { class: "btn del small", onclick: () => adminDeleteCharacteristic(product, name) }, "Удалить"))));
+      el("button", { class: "btn del small", onclick: () => adminDeleteCharacteristic(name) }, "Удалить"))));
   };
-  productSel.addEventListener("change", renderList);
   body.append(el("div", { class: "admin-panel-head" },
     el("div", {},
       el("h2", {}, "Характеристики"),
-      el("p", {}, "Настройте список характеристик отдельно для каждого продукта."))));
-  body.append(el("div", { class: "admin-inline-form" },
-    productSel,
-    el("form", {
-      class: "admin-inline-form compact",
-      onsubmit: async (e) => {
-        e.preventDefault();
-        await adminAddCharacteristic(productSel.value, nameInput.value);
-        nameInput.value = "";
-      },
-    }, nameInput, el("button", { class: "btn primary", type: "submit" }, "Добавить"))));
+      el("p", {}, "Настройте общий список характеристик для всех анализов."))));
+  body.append(el("form", {
+    class: "admin-inline-form",
+    onsubmit: async (e) => {
+      e.preventDefault();
+      await adminAddCharacteristic(nameInput.value);
+      nameInput.value = "";
+    },
+  }, nameInput, el("button", { class: "btn primary", type: "submit" }, "Добавить")));
   body.append(list);
   renderList();
 }
 
-async function adminAddCharacteristic(product, name) {
+async function adminAddCharacteristic(name) {
   name = name.trim();
-  if (!product || !name) return;
+  if (!name) return;
   try {
     await api("/api/admin/characteristics", {
       method: "POST",
       headers: { "Content-Type": "application/json", ...adminHdr() },
-      body: JSON.stringify({ product, name }),
+      body: JSON.stringify({ name }),
     });
     toast("Характеристика добавлена", "ok");
     await loadMeta();
@@ -792,9 +773,9 @@ async function adminAddCharacteristic(product, name) {
   } catch (e) { toast(e.message, "err"); }
 }
 
-async function adminDeleteCharacteristic(product, name) {
-  if (!confirm(`Удалить характеристику «${name}» для ${product}?`)) return;
-  const params = new URLSearchParams({ product, name });
+async function adminDeleteCharacteristic(name) {
+  if (!confirm(`Удалить характеристику «${name}»?`)) return;
+  const params = new URLSearchParams({ name });
   try {
     await api(`/api/admin/characteristics?${params.toString()}`, { method: "DELETE", headers: adminHdr() });
     toast("Характеристика удалена", "ok");
@@ -803,69 +784,19 @@ async function adminDeleteCharacteristic(product, name) {
   } catch (e) { toast(e.message, "err"); }
 }
 
-function renderCharacteristicsProductSelect() {
-  const sel = $("#characteristics-product");
-  if (!sel) return;
-  const current = state.characteristicsProduct || sel.value || state.meta.products[0] || "";
-  sel.innerHTML = "";
-  state.meta.products.forEach((p) => sel.append(el("option", p === current ? { value: p, selected: "" } : { value: p }, p)));
-  state.characteristicsProduct = sel.value || current;
-  sel.onchange = () => {
-    state.characteristicsProduct = sel.value;
-    renderCharacteristicsView();
-  };
-}
-
 function renderCharacteristicsView() {
   const wrap = $("#characteristics-options");
-  const sel = $("#characteristics-product");
-  if (!wrap || !sel) return;
-  if (sel.options.length !== state.meta.products.length) renderCharacteristicsProductSelect();
-  const product = state.characteristicsProduct || sel.value || state.meta.products[0] || "";
-  if (product && sel.value !== product) sel.value = product;
+  if (!wrap) return;
   wrap.innerHTML = "";
-  if (!product) {
-    wrap.append(el("div", { class: "admin-empty" }, "Сначала добавьте продукт в управлении."));
-    return;
-  }
-  const enabled = new Set(characteristicsForProduct(product));
-  const options = state.meta.characteristic_options || [];
+  const options = state.meta.characteristics || [];
   if (options.length === 0) {
     wrap.append(el("div", { class: "admin-empty" }, "Справочник характеристик пуст."));
     return;
   }
   options.forEach((name) => {
-    const checked = enabled.has(name);
-    const input = el("input", checked ? { type: "checkbox", checked: "" } : { type: "checkbox" });
-    input.addEventListener("change", () => toggleProductCharacteristic(product, name, input.checked));
-    wrap.append(el("label", { class: "parameter-card" },
-      input,
+    wrap.append(el("div", { class: "parameter-card readonly" },
       el("span", { class: "parameter-name" }, name)));
   });
-}
-
-async function toggleProductCharacteristic(product, name, enabled) {
-  if (!(await ensureAdmin())) {
-    renderCharacteristicsView();
-    return;
-  }
-  try {
-    if (enabled) {
-      await api("/api/admin/characteristics", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...adminHdr() },
-        body: JSON.stringify({ product, name }),
-      });
-    } else {
-      const params = new URLSearchParams({ product, name });
-      await api(`/api/admin/characteristics?${params.toString()}`, { method: "DELETE", headers: adminHdr() });
-    }
-    toast(enabled ? "Характеристика включена" : "Характеристика отключена", "ok");
-    await loadMeta();
-  } catch (e) {
-    toast(e.message, "err");
-    renderCharacteristicsView();
-  }
 }
 
 function renderAdminMaintenance() {
@@ -907,11 +838,7 @@ function renderCreateProduct() {
   sel.innerHTML = "";
   sel.append(el("option", { value: "" }, "—"));
   state.meta.products.forEach((p) => sel.append(el("option", { value: p }, p)));
-  sel.onchange = () => {
-    $("#create-characteristics-list").innerHTML = "";
-    ensureCharacteristicsEmpty($("#create-characteristics-list"));
-    renderCreateCharacteristicSelect();
-  };
+  sel.onchange = () => renderCreateCharacteristicSelect();
 }
 
 function renderCreateSource() {
@@ -924,7 +851,7 @@ function renderCreateSource() {
 function renderCreateCharacteristicSelect() {
   const current = $("#create-characteristic-select");
   if (!current) return;
-  const next = characteristicSelect($("#create-product").value || "", readCharacteristicsFrom("#create-characteristics-list").map((ch) => ch.name), "create-characteristic-select");
+  const next = characteristicSelect(readCharacteristicsFrom("#create-characteristics-list").map((ch) => ch.name), "create-characteristic-select");
   current.replaceWith(next);
 }
 

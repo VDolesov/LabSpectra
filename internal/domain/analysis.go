@@ -76,15 +76,6 @@ func CharacteristicOptions() []string {
 	return out
 }
 
-func ValidCharacteristicOption(name string) bool {
-	for _, x := range characteristicOptions {
-		if x == name {
-			return true
-		}
-	}
-	return false
-}
-
 type Kind string
 
 const (

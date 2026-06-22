@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>LabSpectra — учёт анализов</title>
-  <link rel="stylesheet" href="styles.css?v=20260622-characteristics-ref" />
+  <link rel="stylesheet" href="styles.css?v=20260622-characteristics-global" />
 </head>
 <body>
   <header class="topbar">
@@ -88,9 +88,8 @@
         <div class="characteristics-page-head">
           <div>
             <h1>Характеристики</h1>
-            <p>Справочник параметров и набор характеристик для выбранного продукта.</p>
+            <p>Общий справочник параметров для заполнения анализов.</p>
           </div>
-          <label>Продукт<select id="characteristics-product"></select></label>
         </div>
         <div class="characteristics-workspace">
           <section class="section">
@@ -100,7 +99,7 @@
           <section class="section">
             <h3>Как заполнять анализ</h3>
             <div class="hint-block">
-              В форме «Новый анализ» выберите продукт, затем снизу добавьте нужные характеристики из этого списка и впишите значения.
+              В форме «Новый анализ» снизу добавьте нужные характеристики из этого списка и впишите значения.
             </div>
           </section>
         </div>
@@ -185,6 +184,6 @@
 
   <div id="toasts" class="toasts"></div>
 
-  <script src="app.js?v=20260622-characteristics-ref"></script>
+  <script src="app.js?v=20260622-characteristics-global"></script>
 </body>
 </html>

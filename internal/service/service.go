@@ -27,7 +27,7 @@ type Service struct {
 	logFile         *os.File
 	adminPassword   string
 	products        []string
-	characteristics map[string][]string
+	characteristics []string
 	mu              sync.Mutex
 }
 
@@ -61,7 +61,7 @@ func New(root string) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	characteristics, err := storage.ReadCharacteristics(fs.Paths.Characteristics())
+	characteristics, err := storage.ReadCharacteristics(fs.Paths.Characteristics(), domain.CharacteristicOptions())
 	if err != nil {
 		return nil, err
 	}
@@ -164,11 +164,7 @@ func (s *Service) DeleteProduct(product string) ([]string, error) {
 		return nil, fmt.Errorf("продукт не найден: %q", product)
 	}
 	s.products = append(s.products[:idx], s.products[idx+1:]...)
-	delete(s.characteristics, product)
 	if err := storage.WriteProducts(s.fs.Paths.Products(), s.products); err != nil {
-		return nil, err
-	}
-	if err := storage.WriteCharacteristics(s.fs.Paths.Characteristics(), s.characteristics); err != nil {
 		return nil, err
 	}
 	slog.Info("удалён продукт", "product", product)
@@ -187,80 +183,48 @@ func (s *Service) validProductLocked(product string) bool {
 	return false
 }
 
-func (s *Service) CharacteristicsCatalog() map[string][]string {
+func (s *Service) Characteristics() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return copyCatalog(s.characteristics)
+	return append([]string(nil), s.characteristics...)
 }
 
-func (s *Service) CharacteristicOptions() []string {
-	return domain.CharacteristicOptions()
-}
-
-func (s *Service) AddCharacteristic(product, name string) (map[string][]string, error) {
+func (s *Service) AddCharacteristic(name string) ([]string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	product = strings.TrimSpace(product)
 	name = strings.TrimSpace(name)
-	if product == "" {
-		return nil, fmt.Errorf("продукт не указан")
-	}
-	if !s.validProductLocked(product) {
-		return nil, fmt.Errorf("неизвестный продукт: %q", product)
-	}
 	if name == "" {
 		return nil, fmt.Errorf("характеристика не должна быть пустой")
 	}
-	if !domain.ValidCharacteristicOption(name) {
-		return nil, fmt.Errorf("неизвестная характеристика: %q", name)
-	}
-	list, ok := s.characteristics[product]
-	if !ok {
-		list = domain.CharacteristicOptions()
-	}
-	for _, x := range list {
+	for _, x := range s.characteristics {
 		if x == name {
-			if !ok {
-				s.characteristics[product] = list
-				if err := storage.WriteCharacteristics(s.fs.Paths.Characteristics(), s.characteristics); err != nil {
-					return nil, err
-				}
-			}
-			return copyCatalog(s.characteristics), nil
+			return append([]string(nil), s.characteristics...), nil
 		}
 	}
-	s.characteristics[product] = append(list, name)
+	s.characteristics = append(s.characteristics, name)
 	if err := storage.WriteCharacteristics(s.fs.Paths.Characteristics(), s.characteristics); err != nil {
 		return nil, err
 	}
-	slog.Info("добавлена характеристика", "product", product, "name", name)
-	return copyCatalog(s.characteristics), nil
+	slog.Info("добавлена характеристика", "name", name)
+	return append([]string(nil), s.characteristics...), nil
 }
 
-func (s *Service) DeleteCharacteristic(product, name string) (map[string][]string, error) {
+func (s *Service) DeleteCharacteristic(name string) ([]string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	product = strings.TrimSpace(product)
 	name = strings.TrimSpace(name)
-	if product == "" || name == "" {
-		return nil, fmt.Errorf("продукт и характеристика должны быть указаны")
+	if name == "" {
+		return nil, fmt.Errorf("характеристика должна быть указана")
 	}
 	for _, a := range s.ix.All() {
-		if a.Product != product {
-			continue
-		}
 		for _, ch := range a.Characteristics {
 			if ch.Name == name {
 				return nil, fmt.Errorf("характеристика %q используется в анализе %s", name, a.ID)
 			}
 		}
 	}
-	list, ok := s.characteristics[product]
-	if !ok {
-		list = domain.CharacteristicOptions()
-	}
 	idx := -1
-	for i, x := range list {
+	for i, x := range s.characteristics {
 		if x == name {
 			idx = i
 			break
@@ -269,13 +233,12 @@ func (s *Service) DeleteCharacteristic(product, name string) (map[string][]strin
 	if idx == -1 {
 		return nil, fmt.Errorf("характеристика не найдена: %q", name)
 	}
-	list = append(list[:idx], list[idx+1:]...)
-	s.characteristics[product] = list
+	s.characteristics = append(s.characteristics[:idx], s.characteristics[idx+1:]...)
 	if err := storage.WriteCharacteristics(s.fs.Paths.Characteristics(), s.characteristics); err != nil {
 		return nil, err
 	}
-	slog.Info("удалена характеристика", "product", product, "name", name)
-	return copyCatalog(s.characteristics), nil
+	slog.Info("удалена характеристика", "name", name)
+	return append([]string(nil), s.characteristics...), nil
 }
 
 func (s *Service) normalizeCharacteristicsLocked(product string, in []domain.Characteristic) ([]domain.Characteristic, error) {
@@ -290,8 +253,8 @@ func (s *Service) normalizeCharacteristicsLocked(product string, in []domain.Cha
 		if name == "" {
 			return nil, fmt.Errorf("характеристика не указана")
 		}
-		if !s.validCharacteristicLocked(product, name) {
-			return nil, fmt.Errorf("характеристика %q не настроена для продукта %q", name, product)
+		if !s.validCharacteristicLocked(name) {
+			return nil, fmt.Errorf("характеристика %q не настроена", name)
 		}
 		if seen[name] {
 			return nil, fmt.Errorf("характеристика %q уже добавлена", name)
@@ -302,25 +265,13 @@ func (s *Service) normalizeCharacteristicsLocked(product string, in []domain.Cha
 	return out, nil
 }
 
-func (s *Service) validCharacteristicLocked(product, name string) bool {
-	list, ok := s.characteristics[product]
-	if !ok {
-		list = domain.CharacteristicOptions()
-	}
-	for _, x := range list {
+func (s *Service) validCharacteristicLocked(name string) bool {
+	for _, x := range s.characteristics {
 		if x == name {
 			return true
 		}
 	}
 	return false
-}
-
-func copyCatalog(in map[string][]string) map[string][]string {
-	out := make(map[string][]string, len(in))
-	for product, list := range in {
-		out[product] = append([]string(nil), list...)
-	}
-	return out
 }
 
 type CreateInput struct {

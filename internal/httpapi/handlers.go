@@ -38,8 +38,8 @@ func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
 		"statuses":               statuses,
 		"products":               s.svc.Products(),
 		"sources":                domain.Sources(),
-		"characteristic_options": s.svc.CharacteristicOptions(),
-		"characteristics":        s.svc.CharacteristicsCatalog(),
+		"characteristic_options": s.svc.Characteristics(),
+		"characteristics":        s.svc.Characteristics(),
 		"origin_acripol":         domain.OriginAcripol,
 		"can_open_local":         local,
 	})
@@ -193,7 +193,7 @@ func (s *Server) handleAdminCharacteristics(w http.ResponseWriter, r *http.Reque
 	if !s.requireAdmin(w, r) {
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"items": s.svc.CharacteristicsCatalog()})
+	writeJSON(w, http.StatusOK, map[string]interface{}{"items": s.svc.Characteristics()})
 }
 
 func (s *Server) handleAdminAddCharacteristic(w http.ResponseWriter, r *http.Request) {
@@ -201,33 +201,31 @@ func (s *Server) handleAdminAddCharacteristic(w http.ResponseWriter, r *http.Req
 		return
 	}
 	var input struct {
-		Product string `json:"product"`
-		Name    string `json:"name"`
+		Name string `json:"name"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeErr(w, http.StatusBadRequest, "некорректный JSON: "+err.Error())
 		return
 	}
-	catalog, err := s.svc.AddCharacteristic(input.Product, input.Name)
+	list, err := s.svc.AddCharacteristic(input.Name)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"items": catalog})
+	writeJSON(w, http.StatusOK, map[string]interface{}{"items": list})
 }
 
 func (s *Server) handleAdminDeleteCharacteristic(w http.ResponseWriter, r *http.Request) {
 	if !s.requireAdmin(w, r) {
 		return
 	}
-	product := r.URL.Query().Get("product")
 	name := r.URL.Query().Get("name")
-	catalog, err := s.svc.DeleteCharacteristic(product, name)
+	list, err := s.svc.DeleteCharacteristic(name)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"items": catalog})
+	writeJSON(w, http.StatusOK, map[string]interface{}{"items": list})
 }
 
 func (s *Server) handleAddAttachment(w http.ResponseWriter, r *http.Request) {
