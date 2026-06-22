@@ -34,12 +34,13 @@ func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
 		root = s.svc.Root()
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"root":           root,
-		"statuses":       statuses,
-		"products":       s.svc.Products(),
-		"sources":        domain.Sources(),
-		"origin_acripol": domain.OriginAcripol,
-		"can_open_local": local,
+		"root":            root,
+		"statuses":        statuses,
+		"products":        s.svc.Products(),
+		"sources":         domain.Sources(),
+		"characteristics": s.svc.CharacteristicsCatalog(),
+		"origin_acripol":  domain.OriginAcripol,
+		"can_open_local":  local,
 	})
 }
 
@@ -185,6 +186,47 @@ func (s *Server) handleAdminDeleteProduct(w http.ResponseWriter, r *http.Request
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{"items": products})
+}
+
+func (s *Server) handleAdminCharacteristics(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"items": s.svc.CharacteristicsCatalog()})
+}
+
+func (s *Server) handleAdminAddCharacteristic(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	var input struct {
+		Product string `json:"product"`
+		Name    string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeErr(w, http.StatusBadRequest, "некорректный JSON: "+err.Error())
+		return
+	}
+	catalog, err := s.svc.AddCharacteristic(input.Product, input.Name)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"items": catalog})
+}
+
+func (s *Server) handleAdminDeleteCharacteristic(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	product := r.URL.Query().Get("product")
+	name := r.URL.Query().Get("name")
+	catalog, err := s.svc.DeleteCharacteristic(product, name)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"items": catalog})
 }
 
 func (s *Server) handleAddAttachment(w http.ResponseWriter, r *http.Request) {
