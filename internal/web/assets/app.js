@@ -1,7 +1,7 @@
 "use strict";
 
 const state = {
-  meta: { root: "", statuses: [], products: [], sources: [], origin_acripol: "АКРИПОЛ", can_open_local: false },
+  meta: { root: "", statuses: [], products: [], sources: [], characteristics: {}, origin_acripol: "АКРИПОЛ", can_open_local: false },
   items: [],
   selectedId: null,
   query: "",
@@ -15,6 +15,7 @@ const state = {
 };
 
 let editManufacturerRead = null;
+let adminLoginResolve = null;
 
 const $ = (sel) => document.querySelector(sel);
 const el = (tag, props = {}, ...kids) => {
@@ -71,6 +72,8 @@ async function loadMeta() {
   renderCreateProduct();
   renderCreateSource();
   setupCreateOrigin();
+  renderCreateCharacteristicSelect();
+  renderCreateCharacteristicsList();
   applyMetaVisibility();
 }
 
@@ -97,10 +100,14 @@ function setView(v) {
   state.view = v;
   $("#view-table").classList.toggle("hidden", v !== "table");
   $("#view-cards").classList.toggle("hidden", v !== "cards");
+  $("#view-new").classList.toggle("hidden", v !== "new");
   $("#view-admin").classList.toggle("hidden", v !== "admin");
   $(".toolbar").classList.toggle("hidden", v === "admin");
-  $(".datefilters").classList.toggle("hidden", v === "admin");
-  $("#btn-new").classList.toggle("hidden", v === "admin");
+  $(".datefilters").classList.toggle("hidden", v === "admin" || v === "new");
+  $("#search").classList.toggle("hidden", v === "new");
+  $("#status-filters").classList.toggle("hidden", v === "new");
+  $("#list-count").classList.toggle("hidden", v === "new");
+  $("#btn-new").classList.toggle("hidden", v === "admin" || v === "new");
   $("#btn-backup").classList.toggle("hidden", v === "admin");
   $("#btn-rebuild").classList.toggle("hidden", v === "admin");
   $("#btn-open-xlsx").classList.toggle("hidden", v === "admin" || !state.meta.can_open_local);
@@ -135,6 +142,33 @@ function photoCell(id, list) {
   if (!list || list.length === 0) return el("span", { class: "muted" }, "—");
   return el("div", { class: "cell-files" }, ...list.map((rel) =>
     el("img", { class: "mini-thumb", src: fileURL(id, rel), title: baseName(rel), onclick: (e) => { e.stopPropagation(); openLightbox(fileURL(id, rel)); } })));
+}
+
+function formatCharacteristics(list) {
+  const items = normalizedCharacteristics(list);
+  if (items.length === 0) return "—";
+  return items
+    .map((ch) => ch.value ? `${ch.name}: ${ch.value}` : ch.name)
+    .join("; ");
+}
+
+function normalizedCharacteristics(list) {
+  if (!list || list.length === 0) return [];
+  return list
+    .filter((ch) => (ch.name || ch.Name || ch.value || ch.Value))
+    .map((ch) => {
+      const name = ch.name || ch.Name || "";
+      const value = ch.value || ch.Value || "";
+      return { name, value };
+    });
+}
+
+function characteristicsMiniTable(list) {
+  const items = normalizedCharacteristics(list);
+  if (items.length === 0) return el("span", { class: "muted" }, "—");
+  return el("div", { class: "char-matrix", style: `--char-cols:${items.length}` },
+    ...items.map((ch) => el("div", { class: "char-matrix-cell char-matrix-head" }, ch.name)),
+    ...items.map((ch) => el("div", { class: "char-matrix-cell char-matrix-value" }, ch.value || "—")));
 }
 
 function openLightbox(url) {
@@ -210,6 +244,7 @@ async function saveField(item, field, val) {
     short_result: u.short_result || "",
     status: u.status || "",
     comment: u.comment || "",
+    characteristics: field === "product" ? [] : (u.characteristics || []),
   };
   try {
     await api("/api/analyses/" + encodeURIComponent(item.id), {
@@ -226,8 +261,8 @@ function sortedItems() {
   if (k) {
     const dir = state.sort.dir;
     items.sort((a, b) => {
-      const av = (a[k] || "").toString().toLowerCase();
-      const bv = (b[k] || "").toString().toLowerCase();
+      const av = (k === "characteristics" ? formatCharacteristics(a.characteristics) : (a[k] || "")).toString().toLowerCase();
+      const bv = (k === "characteristics" ? formatCharacteristics(b.characteristics) : (b[k] || "")).toString().toLowerCase();
       if (av < bv) return -dir;
       if (av > bv) return dir;
       return 0;
@@ -249,7 +284,7 @@ function renderTable() {
   tbody.innerHTML = "";
   if (state.items.length === 0) {
     tbody.append(el("tr", { class: "empty-row" },
-      el("td", { colspan: "13" }, "Пока нет анализов. Нажмите «＋ Новый анализ», чтобы создать первый.")));
+      el("td", { colspan: "14" }, "Пока нет анализов. Нажмите «＋ Новый анализ», чтобы создать первый.")));
     return;
   }
   sortedItems().forEach((a) => {
@@ -267,6 +302,7 @@ function renderTable() {
       editableCell(a, "short_result", "text", a.short_result || "—"),
       statusCell(a),
       editableCell(a, "operator", "text", a.operator || "—"),
+      el("td", { class: "c-characteristics" }, characteristicsMiniTable(a.characteristics)),
       el("td", {}, photoCell(a.id, a.attachments.photos)),
       editableCell(a, "comment", "text", a.comment || "—", "c-comment")));
   });
@@ -358,11 +394,101 @@ function renderDetail(a) {
       field("Краткий результат", "short_result", a.short_result),
       field("Комментарий", "comment", a.comment, "textarea")));
 
+  const chars = characteristicsSection(a);
+  productSel.addEventListener("change", () => {
+    const list = chars.querySelector("#edit-characteristics-list");
+    list.innerHTML = "";
+    ensureCharacteristicsEmpty(list);
+    const current = chars.querySelector("#edit-characteristic-select");
+    current.replaceWith(characteristicSelect(productSel.value || "", [], "edit-characteristic-select"));
+  });
+
   const attach = el("div", { class: "section" },
     el("h3", {}, "Вложения"),
     attachGroup(a, "Фотографии", "photo", a.attachments.photos, "image/*", true));
 
-  detail.append(el("div", { class: "card-wrap" }, head, fields, attach));
+  detail.append(el("div", { class: "card-wrap" }, head, fields, chars, attach));
+}
+
+function characteristicsSection(a) {
+  const product = a.product || "";
+  const select = characteristicSelect(product, [], "edit-characteristic-select");
+  const list = el("div", { id: "edit-characteristics-list", class: "characteristics-list" });
+  const section = el("div", { class: "section" },
+    el("h3", {}, "Характеристики"),
+    el("div", { class: "characteristic-picker" },
+      select,
+      el("button", { class: "btn ghost", type: "button", onclick: () => addCharacteristicRow("#edit-characteristics-list", select.value, "") }, "Добавить")),
+    list);
+  renderCharacteristicRows(list, a.characteristics || []);
+  return section;
+}
+
+function characteristicsForProduct(product) {
+  return (state.meta.characteristics && state.meta.characteristics[product]) || [];
+}
+
+function characteristicSelect(product, selected = [], id = "") {
+  const selectedSet = new Set(selected);
+  const options = characteristicsForProduct(product).filter((name) => !selectedSet.has(name));
+  const props = id ? { id } : {};
+  const select = el("select", props);
+  select.append(el("option", { value: "" }, options.length ? "Выберите характеристику" : "Нет настроенных характеристик"));
+  options.forEach((name) => select.append(el("option", { value: name }, name)));
+  return select;
+}
+
+function renderCharacteristicRows(container, list) {
+  container.innerHTML = "";
+  if (!list || list.length === 0) {
+    container.append(el("div", { class: "characteristics-empty" }, "Характеристики ещё не добавлены."));
+    return;
+  }
+  list.forEach((ch) => addCharacteristicRow(container, ch.name || ch.Name, ch.value || ch.Value || ""));
+}
+
+function addCharacteristicRow(target, name, value = "") {
+  const container = typeof target === "string" ? $(target) : target;
+  name = (name || "").trim();
+  if (!name) return;
+  const exists = readCharacteristicsFrom(container).some((ch) => ch.name === name);
+  if (exists) {
+    toast("Характеристика уже добавлена", "err");
+    return;
+  }
+  container.querySelector(".characteristics-empty")?.remove();
+  ensureCharacteristicsHeader(container);
+  container.append(el("div", { class: "characteristic-row", "data-name": name },
+    el("div", { class: "char-cell char-name" }, name),
+    el("div", { class: "char-cell" }, el("input", { type: "text", class: "characteristic-value", value })),
+    el("div", { class: "char-actions" }, el("button", { class: "btn del small", type: "button", onclick: (e) => {
+      e.currentTarget.closest(".characteristic-row").remove();
+      ensureCharacteristicsEmpty(container);
+      if (container.id === "create-characteristics-list") renderCreateCharacteristicSelect();
+    } }, "Удалить"))));
+}
+
+function ensureCharacteristicsHeader(container) {
+  if (container.querySelector(".characteristics-head")) return;
+  container.append(el("div", { class: "characteristics-head" },
+    el("div", {}, "Характеристика"),
+    el("div", {}, "Значение"),
+    el("div", {}, "")));
+}
+
+function ensureCharacteristicsEmpty(container) {
+  if (!container.querySelector(".characteristic-row")) {
+    container.querySelector(".characteristics-head")?.remove();
+    container.append(el("div", { class: "characteristics-empty" }, "Характеристики ещё не добавлены."));
+  }
+}
+
+function readCharacteristicsFrom(target) {
+  const container = typeof target === "string" ? $(target) : target;
+  return [...container.querySelectorAll(".characteristic-row")].map((row) => ({
+    name: row.dataset.name || "",
+    value: row.querySelector(".characteristic-value")?.value.trim() || "",
+  }));
 }
 
 function attachGroup(a, label, kind, list, accept, isImage) {
@@ -401,6 +527,7 @@ async function saveCard(id) {
   const fd = new FormData($("#edit-form"));
   const payload = Object.fromEntries(fd.entries());
   if (editManufacturerRead) payload.origin = editManufacturerRead();
+  payload.characteristics = readCharacteristicsFrom("#edit-characteristics-list");
   try {
     await api("/api/analyses/" + encodeURIComponent(id), {
       method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
@@ -451,9 +578,28 @@ async function deleteAnalysis(id) {
 
 const adminHdr = () => ({ "X-Admin-Password": state.admin });
 
+function requestAdminPassword() {
+  return new Promise((resolve) => {
+    adminLoginResolve = resolve;
+    const box = $("#admin-login");
+    const input = $("#admin-password");
+    input.value = "";
+    box.classList.remove("hidden");
+    input.focus();
+  });
+}
+
+function resolveAdminLogin(value) {
+  if (!adminLoginResolve) return;
+  const resolve = adminLoginResolve;
+  adminLoginResolve = null;
+  $("#admin-login").classList.add("hidden");
+  resolve((value || "").trim());
+}
+
 async function ensureAdmin() {
   if (!state.admin) {
-    const pw = prompt("Пароль администратора:");
+    const pw = await requestAdminPassword();
     if (!pw) return false;
     try {
       await api("/api/admin/verify", { method: "POST", headers: { "X-Admin-Password": pw } });
@@ -475,12 +621,14 @@ async function enterAdmin() {
 }
 
 function exitAdmin() {
+  state.admin = "";
   setView(state.previousView || "table");
 }
 
 async function renderAdminPanel() {
   document.querySelectorAll(".admin-tab").forEach((b) => b.classList.toggle("active", b.dataset.adminTab === state.adminTab));
   if (state.adminTab === "products") await renderAdminProducts();
+  else if (state.adminTab === "characteristics") renderAdminCharacteristics();
   else if (state.adminTab === "maintenance") renderAdminMaintenance();
   else await renderAdminDeleted();
 }
@@ -583,6 +731,70 @@ async function adminDeleteProduct(product) {
   } catch (e) { toast(e.message, "err"); }
 }
 
+function renderAdminCharacteristics() {
+  const body = $("#admin-content");
+  body.innerHTML = "";
+  const productSel = el("select", { id: "admin-characteristic-product" },
+    ...state.meta.products.map((p) => el("option", { value: p }, p)));
+  const nameInput = el("input", { type: "text", placeholder: "например вязкость" });
+  const list = el("div", { id: "admin-characteristics-list", class: "product-list" });
+  const renderList = () => {
+    list.innerHTML = "";
+    const product = productSel.value;
+    const items = characteristicsForProduct(product);
+    if (items.length === 0) {
+      list.append(el("div", { class: "admin-empty" }, "Для этого продукта характеристики ещё не настроены."));
+      return;
+    }
+    items.forEach((name) => list.append(el("div", { class: "product-row" },
+      el("span", {}, name),
+      el("button", { class: "btn del small", onclick: () => adminDeleteCharacteristic(product, name) }, "Удалить"))));
+  };
+  productSel.addEventListener("change", renderList);
+  body.append(el("div", { class: "admin-panel-head" },
+    el("div", {},
+      el("h2", {}, "Характеристики"),
+      el("p", {}, "Настройте список характеристик отдельно для каждого продукта."))));
+  body.append(el("div", { class: "admin-inline-form" },
+    productSel,
+    el("form", {
+      class: "admin-inline-form compact",
+      onsubmit: async (e) => {
+        e.preventDefault();
+        await adminAddCharacteristic(productSel.value, nameInput.value);
+        nameInput.value = "";
+      },
+    }, nameInput, el("button", { class: "btn primary", type: "submit" }, "Добавить"))));
+  body.append(list);
+  renderList();
+}
+
+async function adminAddCharacteristic(product, name) {
+  name = name.trim();
+  if (!product || !name) return;
+  try {
+    await api("/api/admin/characteristics", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...adminHdr() },
+      body: JSON.stringify({ product, name }),
+    });
+    toast("Характеристика добавлена", "ok");
+    await loadMeta();
+    renderAdminCharacteristics();
+  } catch (e) { toast(e.message, "err"); }
+}
+
+async function adminDeleteCharacteristic(product, name) {
+  if (!confirm(`Удалить характеристику «${name}» для ${product}?`)) return;
+  const params = new URLSearchParams({ product, name });
+  try {
+    await api(`/api/admin/characteristics?${params.toString()}`, { method: "DELETE", headers: adminHdr() });
+    toast("Характеристика удалена", "ok");
+    await loadMeta();
+    renderAdminCharacteristics();
+  } catch (e) { toast(e.message, "err"); }
+}
+
 function renderAdminMaintenance() {
   const body = $("#admin-content");
   body.innerHTML = "";
@@ -622,6 +834,11 @@ function renderCreateProduct() {
   sel.innerHTML = "";
   sel.append(el("option", { value: "" }, "—"));
   state.meta.products.forEach((p) => sel.append(el("option", { value: p }, p)));
+  sel.onchange = () => {
+    $("#create-characteristics-list").innerHTML = "";
+    ensureCharacteristicsEmpty($("#create-characteristics-list"));
+    renderCreateCharacteristicSelect();
+  };
 }
 
 function renderCreateSource() {
@@ -629,6 +846,19 @@ function renderCreateSource() {
   sel.innerHTML = "";
   sel.append(el("option", { value: "" }, "—"));
   state.meta.sources.forEach((s) => sel.append(el("option", { value: s }, s)));
+}
+
+function renderCreateCharacteristicSelect() {
+  const current = $("#create-characteristic-select");
+  if (!current) return;
+  const next = characteristicSelect($("#create-product").value || "", readCharacteristicsFrom("#create-characteristics-list").map((ch) => ch.name), "create-characteristic-select");
+  current.replaceWith(next);
+}
+
+function renderCreateCharacteristicsList() {
+  const list = $("#create-characteristics-list");
+  if (!list) return;
+  if (!list.querySelector(".characteristic-row")) ensureCharacteristicsEmpty(list);
 }
 
 function setupCreateOrigin() {
@@ -646,22 +876,29 @@ function createOriginValue() {
 }
 
 function openModal() {
+  resetCreateForm();
+  setView("new");
+}
+
+function resetCreateForm() {
   $("#create-form").reset();
   $("#create-origin-source-wrap").classList.add("hidden");
-  $("#modal").classList.remove("hidden");
+  $("#create-characteristics-list").innerHTML = "";
+  ensureCharacteristicsEmpty($("#create-characteristics-list"));
+  renderCreateCharacteristicSelect();
 }
-function closeModal() { $("#modal").classList.add("hidden"); }
 
 async function submitCreate(e) {
   e.preventDefault();
   const payload = Object.fromEntries(new FormData(e.target).entries());
   payload.origin = createOriginValue();
+  payload.characteristics = readCharacteristicsFrom("#create-characteristics-list");
   try {
     const a = await api("/api/analyses", {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
     });
     toast(`Создан анализ ${a.id}`, "ok");
-    closeModal();
+    resetCreateForm();
     state.selectedId = a.id;
     await loadList();
     openCard(a.id);
@@ -697,19 +934,29 @@ function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTi
 function init() {
   document.querySelectorAll(".seg").forEach((b) => b.addEventListener("click", () => setView(b.dataset.view)));
   $("#btn-new").addEventListener("click", openModal);
-  $("#modal-close").addEventListener("click", closeModal);
-  $("#create-cancel").addEventListener("click", closeModal);
+  $("#create-cancel").addEventListener("click", resetCreateForm);
   $("#create-form").addEventListener("submit", submitCreate);
+  $("#create-characteristic-add").addEventListener("click", () => {
+    addCharacteristicRow("#create-characteristics-list", $("#create-characteristic-select").value, "");
+    renderCreateCharacteristicSelect();
+  });
   $("#btn-rebuild").addEventListener("click", rebuildRegistry);
   $("#btn-open-xlsx").addEventListener("click", openRegistry);
   $("#btn-backup").addEventListener("click", backup);
   $("#btn-admin").addEventListener("click", enterAdmin);
   $("#admin-exit").addEventListener("click", exitAdmin);
+  $("#admin-login-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    resolveAdminLogin($("#admin-password").value);
+  });
+  $("#admin-login-cancel").addEventListener("click", () => resolveAdminLogin(""));
+  $("#admin-login").addEventListener("click", (e) => {
+    if (e.target.id === "admin-login") resolveAdminLogin("");
+  });
   document.querySelectorAll(".admin-tab").forEach((b) => b.addEventListener("click", async () => {
     state.adminTab = b.dataset.adminTab;
     await renderAdminPanel();
   }));
-  $("#modal").addEventListener("click", (e) => { if (e.target.id === "modal") closeModal(); });
   $("#lightbox").addEventListener("click", closeLightbox);
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeLightbox(); });
 

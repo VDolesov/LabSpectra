@@ -105,30 +105,37 @@ func (a *Attachments) For(k Kind) *[]string {
 	}
 }
 
+type Characteristic struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+
 type Analysis struct {
-	SchemaVersion int         `json:"schema_version"`
-	ID            string      `json:"id"`
-	AnalysisDate  string      `json:"analysis_date"`
-	SynthesisDate string      `json:"synthesis_date"`
-	Product       string      `json:"product"`
-	Origin        string      `json:"origin"`
-	Source        string      `json:"source"`
-	Batch         string      `json:"batch"`
-	Operator      string      `json:"operator"`
-	SampleName    string      `json:"sample_name"`
-	Description   string      `json:"description"`
-	ShortResult   string      `json:"short_result"`
-	Status        string      `json:"status"`
-	Comment       string      `json:"comment"`
-	Attachments   Attachments `json:"attachments"`
-	CreatedAt     string      `json:"created_at"`
-	UpdatedAt     string      `json:"updated_at"`
-	Committed     bool        `json:"committed"`
-	Deleted       bool        `json:"deleted"`
+	SchemaVersion   int              `json:"schema_version"`
+	ID              string           `json:"id"`
+	AnalysisDate    string           `json:"analysis_date"`
+	SynthesisDate   string           `json:"synthesis_date"`
+	Product         string           `json:"product"`
+	Origin          string           `json:"origin"`
+	Source          string           `json:"source"`
+	Batch           string           `json:"batch"`
+	Operator        string           `json:"operator"`
+	SampleName      string           `json:"sample_name"`
+	Description     string           `json:"description"`
+	ShortResult     string           `json:"short_result"`
+	Status          string           `json:"status"`
+	Comment         string           `json:"comment"`
+	Characteristics []Characteristic `json:"characteristics"`
+	Attachments     Attachments      `json:"attachments"`
+	CreatedAt       string           `json:"created_at"`
+	UpdatedAt       string           `json:"updated_at"`
+	Committed       bool             `json:"committed"`
+	Deleted         bool             `json:"deleted"`
 }
 
 func (a *Analysis) Clone() *Analysis {
 	c := *a
+	c.Characteristics = append([]Characteristic(nil), a.Characteristics...)
 	c.Attachments.Photos = append([]string(nil), a.Attachments.Photos...)
 	c.Attachments.Spectra = append([]string(nil), a.Attachments.Spectra...)
 	return &c

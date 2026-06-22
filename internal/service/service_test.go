@@ -382,6 +382,47 @@ func TestOperatorRoundTrip(t *testing.T) {
 	}
 }
 
+func TestCharacteristicsManagementAndValidation(t *testing.T) {
+	svc := newTestService(t)
+	if _, err := svc.AddCharacteristic("R2531", "вязкость"); err != nil {
+		t.Fatalf("AddCharacteristic: %v", err)
+	}
+	if _, err := svc.AddCharacteristic("R2531", "плотность"); err != nil {
+		t.Fatalf("AddCharacteristic: %v", err)
+	}
+	catalog := svc.CharacteristicsCatalog()
+	if !contains(catalog["R2531"], "вязкость") {
+		t.Fatalf("характеристика не добавлена: %v", catalog)
+	}
+
+	a, err := svc.Create(CreateInput{
+		Product:         "R2531",
+		Characteristics: []domain.Characteristic{{Name: "вязкость", Value: "12"}},
+	})
+	if err != nil {
+		t.Fatalf("Create с характеристикой: %v", err)
+	}
+	if len(a.Characteristics) != 1 || a.Characteristics[0].Value != "12" {
+		t.Fatalf("характеристики не сохранились: %+v", a.Characteristics)
+	}
+	if got := svc.List(Filter{Query: "вязкость 12"}); len(got) != 1 || got[0].ID != a.ID {
+		t.Fatalf("поиск по характеристике вернул %d записей", len(got))
+	}
+
+	if _, err := svc.Create(CreateInput{
+		Product:         "R2531",
+		Characteristics: []domain.Characteristic{{Name: "цвет", Value: "синий"}},
+	}); err == nil {
+		t.Error("создание с ненастроенной характеристикой разрешено")
+	}
+	if _, err := svc.DeleteCharacteristic("R2531", "вязкость"); err == nil {
+		t.Error("удаление используемой характеристики разрешено")
+	}
+	if _, err := svc.DeleteCharacteristic("R2531", "плотность"); err != nil {
+		t.Fatalf("удаление неиспользуемой характеристики: %v", err)
+	}
+}
+
 func TestReconcileRebuildsOnSchemaChange(t *testing.T) {
 	root := t.TempDir()
 	svc, _ := New(root)

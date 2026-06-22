@@ -61,7 +61,7 @@ func uniqueNonEmpty(in []string) []string {
 	seen := map[string]bool{}
 	out := make([]string, 0, len(in))
 	for _, v := range in {
-		v = strings.TrimSpace(v)
+		v = cleanValue(v)
 		if v == "" || seen[v] {
 			continue
 		}
@@ -69,4 +69,8 @@ func uniqueNonEmpty(in []string) []string {
 		out = append(out, v)
 	}
 	return out
+}
+
+func cleanValue(v string) string {
+	return strings.TrimSpace(v)
 }

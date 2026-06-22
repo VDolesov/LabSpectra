@@ -71,6 +71,9 @@ func (s *Server) routes() error {
 	s.mux.HandleFunc("GET /api/admin/products", s.handleAdminProducts)
 	s.mux.HandleFunc("POST /api/admin/products", s.handleAdminAddProduct)
 	s.mux.HandleFunc("DELETE /api/admin/products/{product}", s.handleAdminDeleteProduct)
+	s.mux.HandleFunc("GET /api/admin/characteristics", s.handleAdminCharacteristics)
+	s.mux.HandleFunc("POST /api/admin/characteristics", s.handleAdminAddCharacteristic)
+	s.mux.HandleFunc("DELETE /api/admin/characteristics", s.handleAdminDeleteCharacteristic)
 
 	s.mux.HandleFunc("GET /files/{id}/{path...}", s.handleServeFile)
 
