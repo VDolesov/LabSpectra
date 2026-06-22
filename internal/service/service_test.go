@@ -384,8 +384,8 @@ func TestOperatorRoundTrip(t *testing.T) {
 
 func TestCharacteristicsManagementAndValidation(t *testing.T) {
 	svc := newTestService(t)
-	if !contains(svc.CharacteristicOptions(), "pH") {
-		t.Fatalf("справочник характеристик не содержит pH: %v", svc.CharacteristicOptions())
+	if !contains(svc.Characteristics(), "pH") {
+		t.Fatalf("справочник характеристик не содержит pH: %v", svc.Characteristics())
 	}
 
 	a, err := svc.Create(CreateInput{
@@ -408,20 +408,26 @@ func TestCharacteristicsManagementAndValidation(t *testing.T) {
 	}); err == nil {
 		t.Error("создание с ненастроенной характеристикой разрешено")
 	}
-	if _, err := svc.DeleteCharacteristic("R2531", "pH"); err == nil {
+	if _, err := svc.DeleteCharacteristic("pH"); err == nil {
 		t.Error("удаление используемой характеристики разрешено")
 	}
-	if _, err := svc.DeleteCharacteristic("R2531", "АК, ppm"); err != nil {
+	if _, err := svc.DeleteCharacteristic("АК, ppm"); err != nil {
 		t.Fatalf("удаление неиспользуемой характеристики: %v", err)
 	}
-	if contains(svc.CharacteristicsCatalog()["R2531"], "АК, ppm") {
-		t.Fatalf("характеристика не отключилась: %v", svc.CharacteristicsCatalog())
+	if contains(svc.Characteristics(), "АК, ppm") {
+		t.Fatalf("характеристика не удалилась: %v", svc.Characteristics())
 	}
-	if _, err := svc.AddCharacteristic("R2531", "АК, ppm"); err != nil {
-		t.Fatalf("повторное включение характеристики: %v", err)
+	if _, err := svc.AddCharacteristic("АК, ppm"); err != nil {
+		t.Fatalf("повторное добавление характеристики: %v", err)
 	}
-	if _, err := svc.AddCharacteristic("R2531", "цвет"); err == nil {
-		t.Error("добавление характеристики вне справочника разрешено")
+	if _, err := svc.AddCharacteristic("цвет"); err != nil {
+		t.Fatalf("добавление новой характеристики: %v", err)
+	}
+	if _, err := svc.Create(CreateInput{
+		Product:         "V00S9",
+		Characteristics: []domain.Characteristic{{Name: "цвет", Value: "синий"}},
+	}); err != nil {
+		t.Fatalf("создание с новой глобальной характеристикой: %v", err)
 	}
 }
 

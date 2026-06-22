@@ -6,24 +6,32 @@ import (
 	"path/filepath"
 )
 
-func ReadCharacteristics(path string) (map[string][]string, error) {
+func ReadCharacteristics(path string, defaults []string) ([]string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return map[string][]string{}, nil
+			return uniqueNonEmpty(defaults), nil
 		}
 		return nil, err
+	}
+	var list []string
+	if err := json.Unmarshal(data, &list); err == nil {
+		return uniqueNonEmpty(list), nil
 	}
 	var catalog map[string][]string
 	if err := json.Unmarshal(data, &catalog); err != nil {
 		return nil, err
 	}
-	return normalizeCatalog(catalog), nil
+	migrated := append([]string{}, defaults...)
+	for _, list := range catalog {
+		migrated = append(migrated, list...)
+	}
+	return uniqueNonEmpty(migrated), nil
 }
 
-func WriteCharacteristics(path string, catalog map[string][]string) error {
-	catalog = normalizeCatalog(catalog)
-	data, err := json.MarshalIndent(catalog, "", "  ")
+func WriteCharacteristics(path string, list []string) error {
+	list = uniqueNonEmpty(list)
+	data, err := json.MarshalIndent(list, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -50,17 +58,4 @@ func WriteCharacteristics(path string, catalog map[string][]string) error {
 		return err
 	}
 	return nil
-}
-
-func normalizeCatalog(in map[string][]string) map[string][]string {
-	out := make(map[string][]string, len(in))
-	for product, list := range in {
-		product = cleanValue(product)
-		if product == "" {
-			continue
-		}
-		list = uniqueNonEmpty(list)
-		out[product] = list
-	}
-	return out
 }
