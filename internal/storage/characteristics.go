@@ -60,9 +60,6 @@ func normalizeCatalog(in map[string][]string) map[string][]string {
 			continue
 		}
 		list = uniqueNonEmpty(list)
-		if len(list) == 0 {
-			continue
-		}
 		out[product] = list
 	}
 	return out

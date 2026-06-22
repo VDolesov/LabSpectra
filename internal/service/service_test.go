@@ -384,20 +384,13 @@ func TestOperatorRoundTrip(t *testing.T) {
 
 func TestCharacteristicsManagementAndValidation(t *testing.T) {
 	svc := newTestService(t)
-	if _, err := svc.AddCharacteristic("R2531", "вязкость"); err != nil {
-		t.Fatalf("AddCharacteristic: %v", err)
-	}
-	if _, err := svc.AddCharacteristic("R2531", "плотность"); err != nil {
-		t.Fatalf("AddCharacteristic: %v", err)
-	}
-	catalog := svc.CharacteristicsCatalog()
-	if !contains(catalog["R2531"], "вязкость") {
-		t.Fatalf("характеристика не добавлена: %v", catalog)
+	if !contains(svc.CharacteristicOptions(), "pH") {
+		t.Fatalf("справочник характеристик не содержит pH: %v", svc.CharacteristicOptions())
 	}
 
 	a, err := svc.Create(CreateInput{
 		Product:         "R2531",
-		Characteristics: []domain.Characteristic{{Name: "вязкость", Value: "12"}},
+		Characteristics: []domain.Characteristic{{Name: "pH", Value: "12"}},
 	})
 	if err != nil {
 		t.Fatalf("Create с характеристикой: %v", err)
@@ -405,7 +398,7 @@ func TestCharacteristicsManagementAndValidation(t *testing.T) {
 	if len(a.Characteristics) != 1 || a.Characteristics[0].Value != "12" {
 		t.Fatalf("характеристики не сохранились: %+v", a.Characteristics)
 	}
-	if got := svc.List(Filter{Query: "вязкость 12"}); len(got) != 1 || got[0].ID != a.ID {
+	if got := svc.List(Filter{Query: "pH 12"}); len(got) != 1 || got[0].ID != a.ID {
 		t.Fatalf("поиск по характеристике вернул %d записей", len(got))
 	}
 
@@ -415,11 +408,20 @@ func TestCharacteristicsManagementAndValidation(t *testing.T) {
 	}); err == nil {
 		t.Error("создание с ненастроенной характеристикой разрешено")
 	}
-	if _, err := svc.DeleteCharacteristic("R2531", "вязкость"); err == nil {
+	if _, err := svc.DeleteCharacteristic("R2531", "pH"); err == nil {
 		t.Error("удаление используемой характеристики разрешено")
 	}
-	if _, err := svc.DeleteCharacteristic("R2531", "плотность"); err != nil {
+	if _, err := svc.DeleteCharacteristic("R2531", "АК, ppm"); err != nil {
 		t.Fatalf("удаление неиспользуемой характеристики: %v", err)
+	}
+	if contains(svc.CharacteristicsCatalog()["R2531"], "АК, ppm") {
+		t.Fatalf("характеристика не отключилась: %v", svc.CharacteristicsCatalog())
+	}
+	if _, err := svc.AddCharacteristic("R2531", "АК, ppm"); err != nil {
+		t.Fatalf("повторное включение характеристики: %v", err)
+	}
+	if _, err := svc.AddCharacteristic("R2531", "цвет"); err == nil {
+		t.Error("добавление характеристики вне справочника разрешено")
 	}
 }
 

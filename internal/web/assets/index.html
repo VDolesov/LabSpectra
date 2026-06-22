@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>LabSpectra — учёт анализов</title>
-  <link rel="stylesheet" href="styles.css?v=20260622-characteristics-table" />
+  <link rel="stylesheet" href="styles.css?v=20260622-characteristics-ref" />
 </head>
 <body>
   <header class="topbar">
@@ -28,7 +28,7 @@
     <div class="view-toggle">
       <button class="seg active" data-view="table">▦ Таблица</button>
       <button class="seg" data-view="cards">🗂 Карточка</button>
-      <button class="seg" data-view="new">＋ Новый анализ</button>
+      <button class="seg" data-view="characteristics">▤ Характеристики</button>
     </div>
     <input id="search" type="search" placeholder="Поиск: номер опыта, продукт, партия…" autocomplete="off" />
     <div id="status-filters" class="filters"></div>
@@ -80,6 +80,30 @@
             <p>Выберите анализ в списке или в таблице.</p>
           </div>
         </section>
+      </div>
+    </section>
+
+    <section id="view-characteristics" class="view hidden">
+      <div class="characteristics-page">
+        <div class="characteristics-page-head">
+          <div>
+            <h1>Характеристики</h1>
+            <p>Справочник параметров и набор характеристик для выбранного продукта.</p>
+          </div>
+          <label>Продукт<select id="characteristics-product"></select></label>
+        </div>
+        <div class="characteristics-workspace">
+          <section class="section">
+            <h3>Параметры</h3>
+            <div id="characteristics-options" class="parameter-grid"></div>
+          </section>
+          <section class="section">
+            <h3>Как заполнять анализ</h3>
+            <div class="hint-block">
+              В форме «Новый анализ» выберите продукт, затем снизу добавьте нужные характеристики из этого списка и впишите значения.
+            </div>
+          </section>
+        </div>
       </div>
     </section>
 
@@ -161,6 +185,6 @@
 
   <div id="toasts" class="toasts"></div>
 
-  <script src="app.js?v=20260622-characteristics-table"></script>
+  <script src="app.js?v=20260622-characteristics-ref"></script>
 </body>
 </html>

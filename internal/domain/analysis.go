@@ -56,6 +56,35 @@ func ValidProduct(p string) bool {
 	return false
 }
 
+var characteristicOptions = []string{
+	"ηдин, спз",
+	"ηдин, мПа•с",
+	"[η], дл/г",
+	"W, г/г",
+	"м.д.н.в., %",
+	"ρ20 г/см3",
+	"ρ25, г/см3",
+	"с.г., %",
+	"pH",
+	"АК, ppm",
+	"АА, ppm",
+}
+
+func CharacteristicOptions() []string {
+	out := make([]string, len(characteristicOptions))
+	copy(out, characteristicOptions)
+	return out
+}
+
+func ValidCharacteristicOption(name string) bool {
+	for _, x := range characteristicOptions {
+		if x == name {
+			return true
+		}
+	}
+	return false
+}
+
 type Kind string
 
 const (
