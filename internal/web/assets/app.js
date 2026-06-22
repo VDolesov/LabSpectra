@@ -921,12 +921,29 @@ async function openRegistry() {
   } catch (e) { toast(e.message, "err"); }
 }
 
-async function backup() {
+async function downloadBackup() {
   if (!(await ensureAdmin())) return;
   try {
-    await api("/api/backup", { method: "POST", headers: adminHdr() });
-    toast("Резервная копия создана в backups/", "ok");
+    const res = await fetch("/api/backup", { method: "POST", headers: adminHdr() });
+    if (!res.ok) {
+      const ct = res.headers.get("content-type") || "";
+      const body = ct.includes("json") ? await res.json() : await res.text();
+      throw new Error((body && body.error) || `Ошибка ${res.status}`);
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const link = el("a", { href: url, download: backupFilename(res.headers.get("content-disposition") || "") });
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast("Бэкап скачивается", "ok");
   } catch (e) { toast(e.message, "err"); }
+}
+
+function backupFilename(disposition) {
+  const match = /filename="?([^";]+)"?/i.exec(disposition);
+  return match ? match[1] : "labspectra-backup.zip";
 }
 
 function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
@@ -942,7 +959,7 @@ function init() {
   });
   $("#btn-rebuild").addEventListener("click", rebuildRegistry);
   $("#btn-open-xlsx").addEventListener("click", openRegistry);
-  $("#btn-backup").addEventListener("click", backup);
+  $("#btn-backup").addEventListener("click", downloadBackup);
   $("#btn-admin").addEventListener("click", enterAdmin);
   $("#admin-exit").addEventListener("click", exitAdmin);
   $("#admin-login-form").addEventListener("submit", (e) => {
