@@ -655,6 +655,9 @@ func (s *Service) RebuildRegistry() (int, error) {
 func (s *Service) Backup() (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.rebuildRegistryLocked(); err != nil {
+		return "", err
+	}
 	return storage.Backup(s.fs.Paths)
 }
 

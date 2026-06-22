@@ -33,14 +33,19 @@ func Backup(p Paths) (string, error) {
 			if walkErr != nil {
 				return walkErr
 			}
-			if info.IsDir() {
-				return nil
-			}
 			rel, err := filepath.Rel(p.Root, path)
 			if err != nil {
 				return err
 			}
-			return addToZip(zw, path, filepath.ToSlash(rel))
+			name := filepath.ToSlash(rel)
+			if info.IsDir() {
+				if name == "." {
+					return nil
+				}
+				_, err := zw.Create(name + "/")
+				return err
+			}
+			return addToZip(zw, path, name)
 		})
 		if err != nil {
 			return "", err

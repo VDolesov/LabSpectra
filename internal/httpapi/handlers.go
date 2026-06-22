@@ -304,7 +304,11 @@ func (s *Server) handleBackup(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"path": path})
+	name := filepath.Base(path)
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
+	w.Header().Set("Cache-Control", "no-store")
+	http.ServeFile(w, r, path)
 }
 
 func (s *Server) handleOpenRegistry(w http.ResponseWriter, r *http.Request) {
