@@ -193,6 +193,10 @@ func (s *Service) CharacteristicsCatalog() map[string][]string {
 	return copyCatalog(s.characteristics)
 }
 
+func (s *Service) CharacteristicOptions() []string {
+	return domain.CharacteristicOptions()
+}
+
 func (s *Service) AddCharacteristic(product, name string) (map[string][]string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -207,9 +211,21 @@ func (s *Service) AddCharacteristic(product, name string) (map[string][]string, 
 	if name == "" {
 		return nil, fmt.Errorf("характеристика не должна быть пустой")
 	}
-	list := s.characteristics[product]
+	if !domain.ValidCharacteristicOption(name) {
+		return nil, fmt.Errorf("неизвестная характеристика: %q", name)
+	}
+	list, ok := s.characteristics[product]
+	if !ok {
+		list = domain.CharacteristicOptions()
+	}
 	for _, x := range list {
 		if x == name {
+			if !ok {
+				s.characteristics[product] = list
+				if err := storage.WriteCharacteristics(s.fs.Paths.Characteristics(), s.characteristics); err != nil {
+					return nil, err
+				}
+			}
 			return copyCatalog(s.characteristics), nil
 		}
 	}
@@ -239,7 +255,10 @@ func (s *Service) DeleteCharacteristic(product, name string) (map[string][]strin
 			}
 		}
 	}
-	list := s.characteristics[product]
+	list, ok := s.characteristics[product]
+	if !ok {
+		list = domain.CharacteristicOptions()
+	}
 	idx := -1
 	for i, x := range list {
 		if x == name {
@@ -251,11 +270,7 @@ func (s *Service) DeleteCharacteristic(product, name string) (map[string][]strin
 		return nil, fmt.Errorf("характеристика не найдена: %q", name)
 	}
 	list = append(list[:idx], list[idx+1:]...)
-	if len(list) == 0 {
-		delete(s.characteristics, product)
-	} else {
-		s.characteristics[product] = list
-	}
+	s.characteristics[product] = list
 	if err := storage.WriteCharacteristics(s.fs.Paths.Characteristics(), s.characteristics); err != nil {
 		return nil, err
 	}
@@ -288,7 +303,11 @@ func (s *Service) normalizeCharacteristicsLocked(product string, in []domain.Cha
 }
 
 func (s *Service) validCharacteristicLocked(product, name string) bool {
-	for _, x := range s.characteristics[product] {
+	list, ok := s.characteristics[product]
+	if !ok {
+		list = domain.CharacteristicOptions()
+	}
+	for _, x := range list {
 		if x == name {
 			return true
 		}

@@ -34,13 +34,14 @@ func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
 		root = s.svc.Root()
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"root":            root,
-		"statuses":        statuses,
-		"products":        s.svc.Products(),
-		"sources":         domain.Sources(),
-		"characteristics": s.svc.CharacteristicsCatalog(),
-		"origin_acripol":  domain.OriginAcripol,
-		"can_open_local":  local,
+		"root":                   root,
+		"statuses":               statuses,
+		"products":               s.svc.Products(),
+		"sources":                domain.Sources(),
+		"characteristic_options": s.svc.CharacteristicOptions(),
+		"characteristics":        s.svc.CharacteristicsCatalog(),
+		"origin_acripol":         domain.OriginAcripol,
+		"can_open_local":         local,
 	})
 }
 

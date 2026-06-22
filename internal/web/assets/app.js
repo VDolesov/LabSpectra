@@ -1,7 +1,7 @@
 "use strict";
 
 const state = {
-  meta: { root: "", statuses: [], products: [], sources: [], characteristics: {}, origin_acripol: "АКРИПОЛ", can_open_local: false },
+  meta: { root: "", statuses: [], products: [], sources: [], characteristic_options: [], characteristics: {}, origin_acripol: "АКРИПОЛ", can_open_local: false },
   items: [],
   selectedId: null,
   query: "",
@@ -10,6 +10,7 @@ const state = {
   sort: { key: "", dir: 1 },
   admin: "",
   adminTab: "requests",
+  characteristicsProduct: "",
   previousView: "table",
   view: "table",
 };
@@ -74,6 +75,8 @@ async function loadMeta() {
   setupCreateOrigin();
   renderCreateCharacteristicSelect();
   renderCreateCharacteristicsList();
+  renderCharacteristicsProductSelect();
+  if (state.view === "characteristics") renderCharacteristicsView();
   applyMetaVisibility();
 }
 
@@ -100,19 +103,21 @@ function setView(v) {
   state.view = v;
   $("#view-table").classList.toggle("hidden", v !== "table");
   $("#view-cards").classList.toggle("hidden", v !== "cards");
+  $("#view-characteristics").classList.toggle("hidden", v !== "characteristics");
   $("#view-new").classList.toggle("hidden", v !== "new");
   $("#view-admin").classList.toggle("hidden", v !== "admin");
   $(".toolbar").classList.toggle("hidden", v === "admin");
-  $(".datefilters").classList.toggle("hidden", v === "admin" || v === "new");
-  $("#search").classList.toggle("hidden", v === "new");
-  $("#status-filters").classList.toggle("hidden", v === "new");
-  $("#list-count").classList.toggle("hidden", v === "new");
+  $(".datefilters").classList.toggle("hidden", v === "admin" || v === "new" || v === "characteristics");
+  $("#search").classList.toggle("hidden", v === "new" || v === "characteristics");
+  $("#status-filters").classList.toggle("hidden", v === "new" || v === "characteristics");
+  $("#list-count").classList.toggle("hidden", v === "new" || v === "characteristics");
   $("#btn-new").classList.toggle("hidden", v === "admin" || v === "new");
   $("#btn-backup").classList.toggle("hidden", v === "admin");
   $("#btn-rebuild").classList.toggle("hidden", v === "admin");
   $("#btn-open-xlsx").classList.toggle("hidden", v === "admin" || !state.meta.can_open_local);
   $("#btn-admin").textContent = v === "admin" ? "Выйти" : "🛡 Управление";
   document.querySelectorAll(".seg").forEach((b) => b.classList.toggle("active", b.dataset.view === v));
+  if (v === "characteristics") renderCharacteristicsView();
 }
 
 function render() {
@@ -425,7 +430,10 @@ function characteristicsSection(a) {
 }
 
 function characteristicsForProduct(product) {
-  return (state.meta.characteristics && state.meta.characteristics[product]) || [];
+  if (!product) return [];
+  const catalog = state.meta.characteristics || {};
+  if (Object.prototype.hasOwnProperty.call(catalog, product)) return catalog[product] || [];
+  return state.meta.characteristic_options || [];
 }
 
 function characteristicSelect(product, selected = [], id = "") {
@@ -793,6 +801,71 @@ async function adminDeleteCharacteristic(product, name) {
     await loadMeta();
     renderAdminCharacteristics();
   } catch (e) { toast(e.message, "err"); }
+}
+
+function renderCharacteristicsProductSelect() {
+  const sel = $("#characteristics-product");
+  if (!sel) return;
+  const current = state.characteristicsProduct || sel.value || state.meta.products[0] || "";
+  sel.innerHTML = "";
+  state.meta.products.forEach((p) => sel.append(el("option", p === current ? { value: p, selected: "" } : { value: p }, p)));
+  state.characteristicsProduct = sel.value || current;
+  sel.onchange = () => {
+    state.characteristicsProduct = sel.value;
+    renderCharacteristicsView();
+  };
+}
+
+function renderCharacteristicsView() {
+  const wrap = $("#characteristics-options");
+  const sel = $("#characteristics-product");
+  if (!wrap || !sel) return;
+  if (sel.options.length !== state.meta.products.length) renderCharacteristicsProductSelect();
+  const product = state.characteristicsProduct || sel.value || state.meta.products[0] || "";
+  if (product && sel.value !== product) sel.value = product;
+  wrap.innerHTML = "";
+  if (!product) {
+    wrap.append(el("div", { class: "admin-empty" }, "Сначала добавьте продукт в управлении."));
+    return;
+  }
+  const enabled = new Set(characteristicsForProduct(product));
+  const options = state.meta.characteristic_options || [];
+  if (options.length === 0) {
+    wrap.append(el("div", { class: "admin-empty" }, "Справочник характеристик пуст."));
+    return;
+  }
+  options.forEach((name) => {
+    const checked = enabled.has(name);
+    const input = el("input", checked ? { type: "checkbox", checked: "" } : { type: "checkbox" });
+    input.addEventListener("change", () => toggleProductCharacteristic(product, name, input.checked));
+    wrap.append(el("label", { class: "parameter-card" },
+      input,
+      el("span", { class: "parameter-name" }, name)));
+  });
+}
+
+async function toggleProductCharacteristic(product, name, enabled) {
+  if (!(await ensureAdmin())) {
+    renderCharacteristicsView();
+    return;
+  }
+  try {
+    if (enabled) {
+      await api("/api/admin/characteristics", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...adminHdr() },
+        body: JSON.stringify({ product, name }),
+      });
+    } else {
+      const params = new URLSearchParams({ product, name });
+      await api(`/api/admin/characteristics?${params.toString()}`, { method: "DELETE", headers: adminHdr() });
+    }
+    toast(enabled ? "Характеристика включена" : "Характеристика отключена", "ok");
+    await loadMeta();
+  } catch (e) {
+    toast(e.message, "err");
+    renderCharacteristicsView();
+  }
 }
 
 function renderAdminMaintenance() {

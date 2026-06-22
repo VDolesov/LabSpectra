@@ -197,6 +197,20 @@ body {
 .new-page-head p { margin: 6px 0 0; color: var(--ink-soft); font-size: 13px; }
 .new-form { padding: 0 0 24px; }
 
+.characteristics-page { height: 100%; overflow-y: auto; padding: 22px 28px; background: var(--bg); }
+.characteristics-page-head { max-width: 1080px; margin: 0 auto 18px; display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; }
+.characteristics-page-head h1 { margin: 0; font-size: 26px; }
+.characteristics-page-head p { margin: 6px 0 0; color: var(--ink-soft); font-size: 13px; }
+.characteristics-page-head label { min-width: 220px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--ink-soft); font-weight: 700; }
+.characteristics-page-head select { font: inherit; padding: 9px 11px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: #fbfcfe; }
+.characteristics-workspace { max-width: 1080px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 18px; align-items: start; }
+.parameter-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+.parameter-card { display: flex; align-items: center; gap: 10px; padding: 11px 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: #fbfcfe; color: var(--ink); font-weight: 700; cursor: pointer; }
+.parameter-card:hover { border-color: var(--brand); background: #f7faff; }
+.parameter-card input { width: 16px; height: 16px; flex-shrink: 0; }
+.parameter-name { white-space: normal; }
+.hint-block { color: var(--ink-soft); font-size: 14px; line-height: 1.45; }
+
 .form label, .fields label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--ink-soft); font-weight: 600; }
 .form input, .form textarea, .form select,
 .fields input, .fields textarea, .fields select {
@@ -278,7 +292,9 @@ body {
   .topbar-actions { flex-wrap: wrap; }
   .toolbar { flex-wrap: wrap; }
   #search { max-width: none; min-width: 220px; }
-  .grid2, .admin-actions-grid { grid-template-columns: 1fr; }
+  .grid2, .admin-actions-grid, .characteristics-workspace { grid-template-columns: 1fr; }
+  .characteristics-page { padding: 18px 14px; }
+  .characteristics-page-head { flex-direction: column; align-items: stretch; }
   .characteristic-picker, .characteristic-row { grid-template-columns: 1fr; }
   .characteristics-head { display: none; }
   .char-cell, .char-actions { border-right: none; border-bottom: 1px solid var(--line); }
