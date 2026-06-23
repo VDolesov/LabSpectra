@@ -32,6 +32,9 @@ func guard(next http.Handler) http.Handler {
 		}
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Referrer-Policy", "same-origin")
+		w.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
+		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
 		w.Header().Set("Content-Security-Policy",
 			"default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
 		next.ServeHTTP(w, r)
@@ -65,6 +68,12 @@ func (s *Server) routes() error {
 	s.mux.HandleFunc("GET /api/admin/deleted", s.handleAdminDeleted)
 	s.mux.HandleFunc("POST /api/admin/analyses/{id}/restore", s.handleAdminRestore)
 	s.mux.HandleFunc("DELETE /api/admin/analyses/{id}", s.handleAdminPurge)
+	s.mux.HandleFunc("GET /api/admin/products", s.handleAdminProducts)
+	s.mux.HandleFunc("POST /api/admin/products", s.handleAdminAddProduct)
+	s.mux.HandleFunc("DELETE /api/admin/products/{product}", s.handleAdminDeleteProduct)
+	s.mux.HandleFunc("GET /api/admin/characteristics", s.handleAdminCharacteristics)
+	s.mux.HandleFunc("POST /api/admin/characteristics", s.handleAdminAddCharacteristic)
+	s.mux.HandleFunc("DELETE /api/admin/characteristics", s.handleAdminDeleteCharacteristic)
 
 	s.mux.HandleFunc("GET /files/{id}/{path...}", s.handleServeFile)
 

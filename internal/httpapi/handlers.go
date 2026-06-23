@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"encoding/json"
+	"net"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -9,6 +10,8 @@ import (
 	"labspectra/internal/domain"
 	"labspectra/internal/service"
 )
+
+const maxUploadBytes = 100 << 20
 
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -25,11 +28,20 @@ func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
 	for _, st := range domain.AllStatuses() {
 		statuses = append(statuses, string(st))
 	}
+	local := isLocalRequest(r)
+	root := ""
+	if local {
+		root = s.svc.Root()
+	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"root":           s.svc.Root(),
-		"statuses":       statuses,
-		"products":       domain.Products(),
-		"origin_acripol": domain.OriginAcripol,
+		"root":                   root,
+		"statuses":               statuses,
+		"products":               s.svc.Products(),
+		"sources":                domain.Sources(),
+		"characteristic_options": s.svc.Characteristics(),
+		"characteristics":        s.svc.Characteristics(),
+		"origin_acripol":         domain.OriginAcripol,
+		"can_open_local":         local,
 	})
 }
 
@@ -139,6 +151,83 @@ func (s *Server) handleAdminPurge(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
+func (s *Server) handleAdminProducts(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"items": s.svc.Products()})
+}
+
+func (s *Server) handleAdminAddProduct(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	var input struct {
+		Product string `json:"product"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeErr(w, http.StatusBadRequest, "некорректный JSON: "+err.Error())
+		return
+	}
+	products, err := s.svc.AddProduct(input.Product)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"items": products})
+}
+
+func (s *Server) handleAdminDeleteProduct(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	products, err := s.svc.DeleteProduct(r.PathValue("product"))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"items": products})
+}
+
+func (s *Server) handleAdminCharacteristics(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"items": s.svc.Characteristics()})
+}
+
+func (s *Server) handleAdminAddCharacteristic(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	var input struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeErr(w, http.StatusBadRequest, "некорректный JSON: "+err.Error())
+		return
+	}
+	list, err := s.svc.AddCharacteristic(input.Name)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"items": list})
+}
+
+func (s *Server) handleAdminDeleteCharacteristic(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	name := r.URL.Query().Get("name")
+	list, err := s.svc.DeleteCharacteristic(name)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"items": list})
+}
+
 func (s *Server) handleAddAttachment(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	kind := domain.Kind(r.URL.Query().Get("kind"))
@@ -146,6 +235,7 @@ func (s *Server) handleAddAttachment(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "неизвестный тип вложения (kind): photo|spectrum")
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes)
 	if err := r.ParseMultipartForm(64 << 20); err != nil {
 		writeErr(w, http.StatusBadRequest, "не удалось прочитать загрузку: "+err.Error())
 		return
@@ -193,6 +283,10 @@ func (s *Server) handleRemoveAttachment(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleOpenFolder(w http.ResponseWriter, r *http.Request) {
+	if !isLocalRequest(r) {
+		writeErr(w, http.StatusForbidden, "открытие папки доступно только при локальном запуске")
+		return
+	}
 	id := r.PathValue("id")
 	if err := s.svc.OpenFolder(id); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
@@ -202,15 +296,26 @@ func (s *Server) handleOpenFolder(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleBackup(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
 	path, err := s.svc.Backup()
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"path": path})
+	name := filepath.Base(path)
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
+	w.Header().Set("Cache-Control", "no-store")
+	http.ServeFile(w, r, path)
 }
 
 func (s *Server) handleOpenRegistry(w http.ResponseWriter, r *http.Request) {
+	if !isLocalRequest(r) {
+		writeErr(w, http.StatusForbidden, "открытие Excel доступно только при локальном запуске")
+		return
+	}
 	if err := s.svc.OpenRegistry(); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
@@ -219,6 +324,9 @@ func (s *Server) handleOpenRegistry(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRebuild(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
 	n, err := s.svc.RebuildRegistry()
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
@@ -248,4 +356,13 @@ func activeContentExt(name string) bool {
 		return true
 	}
 	return false
+}
+
+func isLocalRequest(r *http.Request) bool {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }

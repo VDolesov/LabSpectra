@@ -161,6 +161,9 @@ func TestDeleteMovesToTrashAndUpdatesIndex(t *testing.T) {
 	a1, _ := svc.Create(CreateInput{Product: "R2531"})
 	svc.Create(CreateInput{Product: "V00S9"})
 
+	if err := svc.SoftDelete(a1.ID); err != nil {
+		t.Fatalf("SoftDelete: %v", err)
+	}
 	if err := svc.Purge(a1.ID); err != nil {
 		t.Fatalf("Purge: %v", err)
 	}
@@ -277,6 +280,46 @@ func TestProductValidation(t *testing.T) {
 	}
 }
 
+func TestProductManagement(t *testing.T) {
+	root := t.TempDir()
+	svc, err := New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	products, err := svc.AddProduct("NEW-01")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.AddProduct("TEMP-REMOVE"); err != nil {
+		t.Fatal(err)
+	}
+	if products, err = svc.DeleteProduct("TEMP-REMOVE"); err != nil {
+		t.Fatalf("удаление неиспользуемого продукта: %v", err)
+	} else if contains(products, "TEMP-REMOVE") {
+		t.Fatalf("удалённый продукт остался в списке: %v", products)
+	}
+	if !contains(products, "NEW-01") {
+		t.Fatalf("новый продукт не добавлен: %v", products)
+	}
+	if _, err := svc.Create(CreateInput{Product: "NEW-01"}); err != nil {
+		t.Fatalf("анализ с новым продуктом не создан: %v", err)
+	}
+	if _, err := svc.DeleteProduct("NEW-01"); err == nil {
+		t.Error("удаление используемого продукта разрешено")
+	}
+	svc.Close()
+
+	svc2, err := New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc2.Close()
+	if !contains(svc2.Products(), "NEW-01") {
+		t.Errorf("продукт не сохранился после перезапуска: %v", svc2.Products())
+	}
+}
+
 func TestDateFilter(t *testing.T) {
 	svc := newTestService(t)
 	svc.Create(CreateInput{Product: "R2531", AnalysisDate: "2026-01-10", SynthesisDate: "2026-01-01"})
@@ -294,6 +337,97 @@ func TestDateFilter(t *testing.T) {
 	got = svc.List(Filter{AnalysisFrom: "2026-01-01", AnalysisTo: "2026-12-31"})
 	if len(got) != 3 {
 		t.Errorf("широкий диапазон вернул %d, ожидалось 3", len(got))
+	}
+}
+
+func TestSourceValidation(t *testing.T) {
+	svc := newTestService(t)
+	a, err := svc.Create(CreateInput{Product: "R2531", Source: "лаб"})
+	if err != nil {
+		t.Fatalf("валидное происхождение отклонено: %v", err)
+	}
+	if a.Source != "лаб" {
+		t.Fatalf("Source=%q, ожидалось лаб", a.Source)
+	}
+	if _, err := svc.Create(CreateInput{Product: "R2531", Source: "склад"}); err == nil {
+		t.Error("невалидное происхождение принято при создании")
+	}
+	if _, err := svc.Update(a.ID, UpdateInput{Product: "R2531", Source: "посылка"}); err != nil {
+		t.Fatalf("валидное происхождение отклонено при обновлении: %v", err)
+	}
+	if _, err := svc.Update(a.ID, UpdateInput{Product: "R2531", Source: "склад"}); err == nil {
+		t.Error("невалидное происхождение принято при обновлении")
+	}
+}
+
+func TestOperatorRoundTrip(t *testing.T) {
+	svc := newTestService(t)
+	a, err := svc.Create(CreateInput{Product: "R2531", Operator: "Иванов"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.Operator != "Иванов" {
+		t.Fatalf("Operator=%q, ожидалось Иванов", a.Operator)
+	}
+	a, err = svc.Update(a.ID, UpdateInput{Product: "R2531", Operator: "Петров"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.Operator != "Петров" {
+		t.Fatalf("Operator=%q, ожидалось Петров", a.Operator)
+	}
+	got := svc.List(Filter{Query: "Петров"})
+	if len(got) != 1 || got[0].ID != a.ID {
+		t.Fatalf("поиск по оператору вернул %d записей", len(got))
+	}
+}
+
+func TestCharacteristicsManagementAndValidation(t *testing.T) {
+	svc := newTestService(t)
+	if !contains(svc.Characteristics(), "pH") {
+		t.Fatalf("справочник характеристик не содержит pH: %v", svc.Characteristics())
+	}
+
+	a, err := svc.Create(CreateInput{
+		Product:         "R2531",
+		Characteristics: []domain.Characteristic{{Name: "pH", Value: "12"}},
+	})
+	if err != nil {
+		t.Fatalf("Create с характеристикой: %v", err)
+	}
+	if len(a.Characteristics) != 1 || a.Characteristics[0].Value != "12" {
+		t.Fatalf("характеристики не сохранились: %+v", a.Characteristics)
+	}
+	if got := svc.List(Filter{Query: "pH 12"}); len(got) != 1 || got[0].ID != a.ID {
+		t.Fatalf("поиск по характеристике вернул %d записей", len(got))
+	}
+
+	if _, err := svc.Create(CreateInput{
+		Product:         "R2531",
+		Characteristics: []domain.Characteristic{{Name: "цвет", Value: "синий"}},
+	}); err == nil {
+		t.Error("создание с ненастроенной характеристикой разрешено")
+	}
+	if _, err := svc.DeleteCharacteristic("pH"); err == nil {
+		t.Error("удаление используемой характеристики разрешено")
+	}
+	if _, err := svc.DeleteCharacteristic("АК, ppm"); err != nil {
+		t.Fatalf("удаление неиспользуемой характеристики: %v", err)
+	}
+	if contains(svc.Characteristics(), "АК, ppm") {
+		t.Fatalf("характеристика не удалилась: %v", svc.Characteristics())
+	}
+	if _, err := svc.AddCharacteristic("АК, ppm"); err != nil {
+		t.Fatalf("повторное добавление характеристики: %v", err)
+	}
+	if _, err := svc.AddCharacteristic("цвет"); err != nil {
+		t.Fatalf("добавление новой характеристики: %v", err)
+	}
+	if _, err := svc.Create(CreateInput{
+		Product:         "V00S9",
+		Characteristics: []domain.Characteristic{{Name: "цвет", Value: "синий"}},
+	}); err != nil {
+		t.Fatalf("создание с новой глобальной характеристикой: %v", err)
 	}
 }
 
@@ -344,6 +478,9 @@ func TestSoftDeleteAndRestore(t *testing.T) {
 	if len(ids) != 1 {
 		t.Errorf("в реестре %d строк, ожидалась 1 (удалённый исключён)", len(ids))
 	}
+	if n, err := svc.RebuildRegistry(); err != nil || n != 1 {
+		t.Errorf("пересборка вернула (%d, %v), ожидалось 1 активная строка", n, err)
+	}
 
 	if err := svc.Restore(a.ID); err != nil {
 		t.Fatal(err)
@@ -353,6 +490,33 @@ func TestSoftDeleteAndRestore(t *testing.T) {
 	}
 	if len(svc.ListDeleted()) != 0 {
 		t.Errorf("после восстановления список удалённых не пуст")
+	}
+}
+
+func TestDeletedAnalysisIsNotPubliclyAccessibleOrMutable(t *testing.T) {
+	svc := newTestService(t)
+	a, _ := svc.Create(CreateInput{Product: "R2531"})
+	if _, err := svc.AddAttachment(a.ID, domain.KindPhoto, "photo.jpg", strings.NewReader("jpg")); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SoftDelete(a.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := svc.Get(a.ID); err == nil {
+		t.Error("Get вернул мягко удалённый анализ")
+	}
+	if _, err := svc.Update(a.ID, UpdateInput{Product: "R2531"}); err == nil {
+		t.Error("Update разрешил править мягко удалённый анализ")
+	}
+	if _, err := svc.AddAttachment(a.ID, domain.KindPhoto, "photo.jpg", strings.NewReader("jpg")); err == nil {
+		t.Error("AddAttachment разрешил добавить файл в мягко удалённый анализ")
+	}
+	if _, err := svc.RemoveAttachment(a.ID, domain.KindPhoto, "photos/photo_1.jpg"); err == nil {
+		t.Error("RemoveAttachment разрешил удалить файл из мягко удалённого анализа")
+	}
+	if _, err := svc.AttachmentFile(a.ID, "photos/photo_1.jpg"); err == nil {
+		t.Error("AttachmentFile отдал файл мягко удалённого анализа")
 	}
 }
 
@@ -366,6 +530,23 @@ func TestCheckAdmin(t *testing.T) {
 	}
 }
 
+func TestAdminPasswordRequiredForPublicRun(t *testing.T) {
+	t.Setenv("PORT", "8080")
+	t.Setenv("ADMIN_PASSWORD", "")
+	if _, err := New(t.TempDir()); err == nil {
+		t.Error("публичный запуск без ADMIN_PASSWORD разрешён")
+	}
+}
+
 func yearStr() string {
 	return strconv.Itoa(time.Now().Year())
+}
+
+func contains(list []string, v string) bool {
+	for _, x := range list {
+		if x == v {
+			return true
+		}
+	}
+	return false
 }

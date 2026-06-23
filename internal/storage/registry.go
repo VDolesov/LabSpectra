@@ -24,6 +24,7 @@ var registryHeaders = []string{
 	"дата анализа",
 	"дата синтеза",
 	"продукт",
+	"производитель",
 	"происхождение",
 	"партия",
 	"дополнительно",
@@ -32,7 +33,8 @@ var registryHeaders = []string{
 	"статус",
 	"путь к папке анализа",
 	"ссылки на фотографии",
-	"ссылки на спектры",
+	"оператор",
+	"характеристики",
 	"комментарий",
 	"дата создания",
 	"дата изменения",
@@ -107,7 +109,7 @@ func (r *Registry) writeHeader(f *excelize.File) error {
 		f.SetCellStyle(sheetName, "A1", lastCol+"1", style)
 	}
 
-	widths := []float64{14, 12, 12, 12, 16, 12, 20, 28, 24, 10, 24, 28, 28, 24, 20, 20}
+	widths := []float64{14, 12, 12, 12, 18, 14, 12, 20, 28, 24, 10, 24, 28, 14, 34, 24, 20, 20}
 	for i, w := range widths {
 		col, _ := excelize.ColumnNumberToName(i + 1)
 		f.SetColWidth(sheetName, col, col, w)
@@ -129,6 +131,7 @@ func (r *Registry) rowValues(a *domain.Analysis) []interface{} {
 		a.SynthesisDate,
 		a.Product,
 		a.Origin,
+		a.Source,
 		a.Batch,
 		a.SampleName,
 		a.Description,
@@ -136,11 +139,27 @@ func (r *Registry) rowValues(a *domain.Analysis) []interface{} {
 		a.Status,
 		r.paths.RelSampleDir(a.ID),
 		rel(a.Attachments.Photos),
-		rel(a.Attachments.Spectra),
+		a.Operator,
+		characteristicsText(a.Characteristics),
 		a.Comment,
 		a.CreatedAt,
 		a.UpdatedAt,
 	}
+}
+
+func characteristicsText(list []domain.Characteristic) string {
+	out := make([]string, 0, len(list))
+	for _, ch := range list {
+		if ch.Name == "" && ch.Value == "" {
+			continue
+		}
+		if ch.Value == "" {
+			out = append(out, ch.Name)
+		} else {
+			out = append(out, ch.Name+": "+ch.Value)
+		}
+	}
+	return strings.Join(out, linkSep)
 }
 
 func findRow(f *excelize.File, id string) (int, error) {

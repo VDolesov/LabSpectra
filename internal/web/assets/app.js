@@ -1,7 +1,7 @@
 "use strict";
 
 const state = {
-  meta: { root: "", statuses: [], products: [], origin_acripol: "АКРИПОЛ" },
+  meta: { root: "", statuses: [], products: [], sources: [], characteristic_options: [], characteristics: [], origin_acripol: "АКРИПОЛ", can_open_local: false },
   items: [],
   selectedId: null,
   query: "",
@@ -9,10 +9,13 @@ const state = {
   dates: { aFrom: "", aTo: "", sFrom: "", sTo: "" },
   sort: { key: "", dir: 1 },
   admin: "",
+  adminTab: "requests",
+  previousView: "table",
   view: "table",
 };
 
-let editOriginRead = null;
+let editManufacturerRead = null;
+let adminLoginResolve = null;
 
 const $ = (sel) => document.querySelector(sel);
 const el = (tag, props = {}, ...kids) => {
@@ -67,7 +70,17 @@ async function loadMeta() {
   renderStatusFilters();
   renderStatusSelect();
   renderCreateProduct();
+  renderCreateSource();
   setupCreateOrigin();
+  renderCreateCharacteristicSelect();
+  renderCreateCharacteristicsList();
+  if (state.view === "characteristics") renderCharacteristicsView();
+  applyMetaVisibility();
+}
+
+function applyMetaVisibility() {
+  const canOpenLocal = !!state.meta.can_open_local;
+  $("#btn-open-xlsx").classList.toggle("hidden", state.view === "admin" || !canOpenLocal);
 }
 
 async function loadList() {
@@ -84,10 +97,25 @@ async function loadList() {
 }
 
 function setView(v) {
+  if (state.view !== "admin" && v === "admin") state.previousView = state.view;
   state.view = v;
   $("#view-table").classList.toggle("hidden", v !== "table");
   $("#view-cards").classList.toggle("hidden", v !== "cards");
+  $("#view-characteristics").classList.toggle("hidden", v !== "characteristics");
+  $("#view-new").classList.toggle("hidden", v !== "new");
+  $("#view-admin").classList.toggle("hidden", v !== "admin");
+  $(".toolbar").classList.toggle("hidden", v === "admin");
+  $(".datefilters").classList.toggle("hidden", v === "admin" || v === "new" || v === "characteristics");
+  $("#search").classList.toggle("hidden", v === "new" || v === "characteristics");
+  $("#status-filters").classList.toggle("hidden", v === "new" || v === "characteristics");
+  $("#list-count").classList.toggle("hidden", v === "new" || v === "characteristics");
+  $("#btn-new").classList.toggle("hidden", v === "admin" || v === "new");
+  $("#btn-backup").classList.toggle("hidden", v === "admin");
+  $("#btn-rebuild").classList.toggle("hidden", v === "admin");
+  $("#btn-open-xlsx").classList.toggle("hidden", v === "admin" || !state.meta.can_open_local);
+  $("#btn-admin").textContent = v === "admin" ? "Выйти" : "🛡 Управление";
   document.querySelectorAll(".seg").forEach((b) => b.classList.toggle("active", b.dataset.view === v));
+  if (v === "characteristics") renderCharacteristicsView();
 }
 
 function render() {
@@ -119,6 +147,33 @@ function photoCell(id, list) {
     el("img", { class: "mini-thumb", src: fileURL(id, rel), title: baseName(rel), onclick: (e) => { e.stopPropagation(); openLightbox(fileURL(id, rel)); } })));
 }
 
+function formatCharacteristics(list) {
+  const items = normalizedCharacteristics(list);
+  if (items.length === 0) return "—";
+  return items
+    .map((ch) => ch.value ? `${ch.name}: ${ch.value}` : ch.name)
+    .join("; ");
+}
+
+function normalizedCharacteristics(list) {
+  if (!list || list.length === 0) return [];
+  return list
+    .filter((ch) => (ch.name || ch.Name || ch.value || ch.Value))
+    .map((ch) => {
+      const name = ch.name || ch.Name || "";
+      const value = ch.value || ch.Value || "";
+      return { name, value };
+    });
+}
+
+function characteristicsMiniTable(list) {
+  const items = normalizedCharacteristics(list);
+  if (items.length === 0) return el("span", { class: "muted" }, "—");
+  return el("div", { class: "char-matrix", style: `--char-cols:${items.length}` },
+    ...items.map((ch) => el("div", { class: "char-matrix-cell char-matrix-head" }, ch.name)),
+    ...items.map((ch) => el("div", { class: "char-matrix-cell char-matrix-value" }, ch.value || "—")));
+}
+
 function openLightbox(url) {
   $("#lightbox-img").src = url;
   $("#lightbox").classList.remove("hidden");
@@ -148,10 +203,11 @@ function beginEdit(td, item, field, type) {
   if (type === "status") {
     input = el("select", { class: "cell-edit" },
       ...state.meta.statuses.map((s) => el("option", s === current ? { value: s, selected: "" } : { value: s }, s)));
-  } else if (type === "product") {
+  } else if (type === "product" || type === "source") {
+    const options = type === "product" ? state.meta.products : state.meta.sources;
     input = el("select", { class: "cell-edit" },
       el("option", current === "" ? { value: "", selected: "" } : { value: "" }, "—"),
-      ...state.meta.products.map((p) => el("option", p === current ? { value: p, selected: "" } : { value: p }, p)));
+      ...options.map((p) => el("option", p === current ? { value: p, selected: "" } : { value: p }, p)));
   } else {
     input = el("input", { class: "cell-edit", type: type === "date" ? "date" : "text", value: current });
   }
@@ -173,7 +229,7 @@ function beginEdit(td, item, field, type) {
     if (ev.key === "Enter") { ev.preventDefault(); input.blur(); }
     else if (ev.key === "Escape") { done = true; renderTable(); }
   });
-  if (type === "status" || type === "product") input.addEventListener("change", () => input.blur());
+  if (type === "status" || type === "product" || type === "source") input.addEventListener("change", () => input.blur());
 }
 
 async function saveField(item, field, val) {
@@ -183,12 +239,15 @@ async function saveField(item, field, val) {
     synthesis_date: u.synthesis_date || "",
     product: u.product || "",
     origin: u.origin || "",
+    source: u.source || "",
     batch: u.batch || "",
+    operator: u.operator || "",
     sample_name: u.sample_name || "",
     description: u.description || "",
     short_result: u.short_result || "",
     status: u.status || "",
     comment: u.comment || "",
+    characteristics: u.characteristics || [],
   };
   try {
     await api("/api/analyses/" + encodeURIComponent(item.id), {
@@ -205,8 +264,8 @@ function sortedItems() {
   if (k) {
     const dir = state.sort.dir;
     items.sort((a, b) => {
-      const av = (a[k] || "").toString().toLowerCase();
-      const bv = (b[k] || "").toString().toLowerCase();
+      const av = (k === "characteristics" ? formatCharacteristics(a.characteristics) : (a[k] || "")).toString().toLowerCase();
+      const bv = (k === "characteristics" ? formatCharacteristics(b.characteristics) : (b[k] || "")).toString().toLowerCase();
       if (av < bv) return -dir;
       if (av > bv) return dir;
       return 0;
@@ -228,7 +287,7 @@ function renderTable() {
   tbody.innerHTML = "";
   if (state.items.length === 0) {
     tbody.append(el("tr", { class: "empty-row" },
-      el("td", { colspan: "12" }, "Пока нет анализов. Нажмите «＋ Новый анализ», чтобы создать первый.")));
+      el("td", { colspan: "14" }, "Пока нет анализов. Нажмите «＋ Новый анализ», чтобы создать первый.")));
     return;
   }
   sortedItems().forEach((a) => {
@@ -240,11 +299,13 @@ function renderTable() {
       editableCell(a, "synthesis_date", "date", fmtDay(a.synthesis_date)),
       editableCell(a, "product", "product", a.product || "—"),
       editableCell(a, "origin", "text", a.origin || "—"),
+      editableCell(a, "source", "source", a.source || "—"),
       editableCell(a, "batch", "text", a.batch || "—"),
       editableCell(a, "sample_name", "text", a.sample_name || "—"),
       editableCell(a, "short_result", "text", a.short_result || "—"),
       statusCell(a),
-      el("td", {}, fileIcons(a.id, a.attachments.spectra, "📕")),
+      editableCell(a, "operator", "text", a.operator || "—"),
+      el("td", { class: "c-characteristics" }, characteristicsMiniTable(a.characteristics)),
       el("td", {}, photoCell(a.id, a.attachments.photos)),
       editableCell(a, "comment", "text", a.comment || "—", "c-comment")));
   });
@@ -298,17 +359,25 @@ function renderDetail(a) {
   const productSel = el("select", { name: "product" },
     el("option", (a.product || "") === "" ? { value: "", selected: "" } : { value: "" }, "—"),
     ...state.meta.products.map((p) => el("option", p === a.product ? { value: p, selected: "" } : { value: p }, p)));
-  const origin = originControls(a.origin || "");
-  editOriginRead = origin.read;
+  const sourceSel = el("select", { name: "source" },
+    el("option", (a.source || "") === "" ? { value: "", selected: "" } : { value: "" }, "—"),
+    ...state.meta.sources.map((s) => el("option", s === a.source ? { value: s, selected: "" } : { value: s }, s)));
+  const manufacturer = manufacturerControls(a.origin || "");
+  editManufacturerRead = manufacturer.read;
+
+  const actions = [
+    el("button", { class: "btn del small", onclick: () => deleteAnalysis(a.id) }, "🗑 Удалить"),
+  ];
+  if (state.meta.can_open_local) {
+    actions.push(el("button", { class: "btn ghost small", onclick: () => openFolder(a.id) }, "📂 Открыть папку"));
+  }
+  actions.push(el("button", { class: "btn primary small", onclick: () => saveCard(a.id) }, "💾 Сохранить"));
 
   const head = el("div", { class: "card-head" },
     el("div", {},
       el("div", { class: "card-id" }, a.id),
       el("div", { class: "card-sub" }, `создан ${fmtDateTime(a.created_at)} · изменён ${fmtDateTime(a.updated_at)}`)),
-    el("div", { class: "card-head-actions" },
-      el("button", { class: "btn del small", onclick: () => deleteAnalysis(a.id) }, "🗑 Удалить"),
-      el("button", { class: "btn ghost small", onclick: () => openFolder(a.id) }, "📂 Открыть папку"),
-      el("button", { class: "btn primary small", onclick: () => saveCard(a.id) }, "💾 Сохранить")));
+    el("div", { class: "card-head-actions" }, ...actions));
 
   const fields = el("div", { class: "section" },
     el("h3", {}, "Данные анализа"),
@@ -318,20 +387,103 @@ function renderDetail(a) {
         field("Дата синтеза", "synthesis_date", a.synthesis_date, "date"),
         el("label", {}, "Продукт", productSel),
         el("label", {}, "Статус", statusSel),
-        origin.selLabel,
-        origin.srcLabel,
-        field("Партия", "batch", a.batch)),
+        manufacturer.selLabel,
+        manufacturer.srcLabel,
+        el("label", {}, "Происхождение", sourceSel),
+        field("Партия", "batch", a.batch),
+        field("Оператор", "operator", a.operator)),
       field("Дополнительно", "sample_name", a.sample_name),
       field("Описание", "description", a.description, "textarea"),
       field("Краткий результат", "short_result", a.short_result),
       field("Комментарий", "comment", a.comment, "textarea")));
 
+  const chars = characteristicsSection(a);
+
   const attach = el("div", { class: "section" },
     el("h3", {}, "Вложения"),
-    attachGroup(a, "Фотографии", "photo", a.attachments.photos, "image/*", true),
-    attachGroup(a, "Спектры", "spectrum", a.attachments.spectra, ".pdf,.txt", false));
+    attachGroup(a, "Фотографии", "photo", a.attachments.photos, "image/*", true));
 
-  detail.append(el("div", { class: "card-wrap" }, head, fields, attach));
+  detail.append(el("div", { class: "card-wrap" }, head, fields, chars, attach));
+}
+
+function characteristicsSection(a) {
+  const select = characteristicSelect([], "edit-characteristic-select");
+  const list = el("div", { id: "edit-characteristics-list", class: "characteristics-list" });
+  const section = el("div", { class: "section" },
+    el("h3", {}, "Характеристики"),
+    el("div", { class: "characteristic-picker" },
+      select,
+      el("button", { class: "btn ghost", type: "button", onclick: () => addCharacteristicRow("#edit-characteristics-list", select.value, "") }, "Добавить")),
+    list);
+  renderCharacteristicRows(list, a.characteristics || []);
+  return section;
+}
+
+function characteristicsList() {
+  return state.meta.characteristics || state.meta.characteristic_options || [];
+}
+
+function characteristicSelect(selected = [], id = "") {
+  const selectedSet = new Set(selected);
+  const options = characteristicsList().filter((name) => !selectedSet.has(name));
+  const props = id ? { id } : {};
+  const select = el("select", props);
+  select.append(el("option", { value: "" }, options.length ? "Выберите характеристику" : "Нет настроенных характеристик"));
+  options.forEach((name) => select.append(el("option", { value: name }, name)));
+  return select;
+}
+
+function renderCharacteristicRows(container, list) {
+  container.innerHTML = "";
+  if (!list || list.length === 0) {
+    container.append(el("div", { class: "characteristics-empty" }, "Характеристики ещё не добавлены."));
+    return;
+  }
+  list.forEach((ch) => addCharacteristicRow(container, ch.name || ch.Name, ch.value || ch.Value || ""));
+}
+
+function addCharacteristicRow(target, name, value = "") {
+  const container = typeof target === "string" ? $(target) : target;
+  name = (name || "").trim();
+  if (!name) return;
+  const exists = readCharacteristicsFrom(container).some((ch) => ch.name === name);
+  if (exists) {
+    toast("Характеристика уже добавлена", "err");
+    return;
+  }
+  container.querySelector(".characteristics-empty")?.remove();
+  ensureCharacteristicsHeader(container);
+  container.append(el("div", { class: "characteristic-row", "data-name": name },
+    el("div", { class: "char-cell char-name" }, name),
+    el("div", { class: "char-cell" }, el("input", { type: "text", class: "characteristic-value", value })),
+    el("div", { class: "char-actions" }, el("button", { class: "btn del small", type: "button", onclick: (e) => {
+      e.currentTarget.closest(".characteristic-row").remove();
+      ensureCharacteristicsEmpty(container);
+      if (container.id === "create-characteristics-list") renderCreateCharacteristicSelect();
+    } }, "Удалить"))));
+}
+
+function ensureCharacteristicsHeader(container) {
+  if (container.querySelector(".characteristics-head")) return;
+  container.append(el("div", { class: "characteristics-head" },
+    el("div", {}, "Характеристика"),
+    el("div", {}, "Значение"),
+    el("div", {}, "")));
+}
+
+function ensureCharacteristicsEmpty(container) {
+  if (!container.querySelector(".characteristic-row")) {
+    container.querySelector(".characteristics-head")?.remove();
+    container.append(el("div", { class: "characteristics-empty" }, "Характеристики ещё не добавлены."));
+  }
+}
+
+function readCharacteristicsFrom(target) {
+  const container = typeof target === "string" ? $(target) : target;
+  return [...container.querySelectorAll(".characteristic-row")].map((row) => ({
+    name: row.dataset.name || "",
+    value: row.querySelector(".characteristic-value")?.value.trim() || "",
+  }));
 }
 
 function attachGroup(a, label, kind, list, accept, isImage) {
@@ -369,7 +521,8 @@ function attachGroup(a, label, kind, list, accept, isImage) {
 async function saveCard(id) {
   const fd = new FormData($("#edit-form"));
   const payload = Object.fromEntries(fd.entries());
-  if (editOriginRead) payload.origin = editOriginRead();
+  if (editManufacturerRead) payload.origin = editManufacturerRead();
+  payload.characteristics = readCharacteristicsFrom("#edit-characteristics-list");
   try {
     await api("/api/analyses/" + encodeURIComponent(id), {
       method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
@@ -420,31 +573,75 @@ async function deleteAnalysis(id) {
 
 const adminHdr = () => ({ "X-Admin-Password": state.admin });
 
-async function enterAdmin() {
+function requestAdminPassword() {
+  return new Promise((resolve) => {
+    adminLoginResolve = resolve;
+    const box = $("#admin-login");
+    const input = $("#admin-password");
+    input.value = "";
+    box.classList.remove("hidden");
+    input.focus();
+  });
+}
+
+function resolveAdminLogin(value) {
+  if (!adminLoginResolve) return;
+  const resolve = adminLoginResolve;
+  adminLoginResolve = null;
+  $("#admin-login").classList.add("hidden");
+  resolve((value || "").trim());
+}
+
+async function ensureAdmin() {
   if (!state.admin) {
-    const pw = prompt("Пароль администратора:");
-    if (!pw) return;
+    const pw = await requestAdminPassword();
+    if (!pw) return false;
     try {
       await api("/api/admin/verify", { method: "POST", headers: { "X-Admin-Password": pw } });
       state.admin = pw;
       toast("Режим администратора включён", "ok");
-    } catch (e) { toast("Неверный пароль", "err"); return; }
+    } catch (e) { toast("Неверный пароль", "err"); return false; }
   }
-  $("#admin-modal").classList.remove("hidden");
-  await renderAdminDeleted();
+  return true;
 }
 
-function closeAdmin() { $("#admin-modal").classList.add("hidden"); }
+async function enterAdmin() {
+  if (state.view === "admin") {
+    exitAdmin();
+    return;
+  }
+  if (!(await ensureAdmin())) return;
+  setView("admin");
+  await renderAdminPanel();
+}
+
+function exitAdmin() {
+  state.admin = "";
+  setView(state.previousView || "table");
+}
+
+async function renderAdminPanel() {
+  document.querySelectorAll(".admin-tab").forEach((b) => b.classList.toggle("active", b.dataset.adminTab === state.adminTab));
+  if (state.adminTab === "products") await renderAdminProducts();
+  else if (state.adminTab === "characteristics") renderAdminCharacteristics();
+  else if (state.adminTab === "maintenance") renderAdminMaintenance();
+  else await renderAdminDeleted();
+}
 
 async function renderAdminDeleted() {
-  const body = $("#admin-body");
+  const body = $("#admin-content");
   body.innerHTML = "";
   let data;
   try { data = await api("/api/admin/deleted", { headers: adminHdr() }); }
   catch (e) { toast(e.message, "err"); return; }
   const items = data.items || [];
+  body.append(el("div", { class: "admin-panel-head" },
+    el("div", {},
+      el("h2", {}, "Заявки на удаление"),
+      el("p", {}, "Обычный пользователь отправляет анализ на удаление, а здесь администратор подтверждает или возвращает его.")),
+    el("span", { class: "count" }, `${items.length} ${plural(items.length)}`)));
   if (items.length === 0) {
-    body.append(el("div", { class: "muted" }, "Нет анализов, ожидающих подтверждения удаления."));
+    body.append(el("div", { class: "admin-empty" }, "Нет анализов, ожидающих подтверждения удаления."));
     return;
   }
   items.forEach((a) => {
@@ -462,7 +659,7 @@ async function adminRestore(id) {
   try {
     await api(`/api/admin/analyses/${encodeURIComponent(id)}/restore`, { method: "POST", headers: adminHdr() });
     toast(`${id} восстановлен`, "ok");
-    await renderAdminDeleted();
+    await renderAdminPanel();
     await loadList();
   } catch (e) { toast(e.message, "err"); }
 }
@@ -472,12 +669,150 @@ async function adminPurge(id) {
   try {
     await api(`/api/admin/analyses/${encodeURIComponent(id)}`, { method: "DELETE", headers: adminHdr() });
     toast(`${id} удалён навсегда`, "ok");
-    await renderAdminDeleted();
+    await renderAdminPanel();
     await loadList();
   } catch (e) { toast(e.message, "err"); }
 }
 
-function originControls(current) {
+async function renderAdminProducts() {
+  const body = $("#admin-content");
+  body.innerHTML = "";
+  let data;
+  try { data = await api("/api/admin/products", { headers: adminHdr() }); }
+  catch (e) { toast(e.message, "err"); return; }
+  const products = data.items || [];
+  const input = el("input", { type: "text", id: "admin-product-input", placeholder: "например NEW-01" });
+  body.append(el("div", { class: "admin-panel-head" },
+    el("div", {},
+      el("h2", {}, "Препараты"),
+      el("p", {}, "Этот список используется в выпадающем поле «Продукт» при создании и редактировании анализа.")),
+    el("span", { class: "count" }, `${products.length} позиций`)));
+  body.append(el("form", {
+    class: "admin-inline-form",
+    onsubmit: async (e) => {
+      e.preventDefault();
+      await adminAddProduct(input.value);
+      input.value = "";
+    },
+  }, input, el("button", { class: "btn primary", type: "submit" }, "Добавить")));
+  body.append(el("div", { class: "product-list" }, ...products.map((p) =>
+    el("div", { class: "product-row" },
+      el("span", {}, p),
+      el("button", { class: "btn del small", onclick: () => adminDeleteProduct(p) }, "Удалить")))));
+}
+
+async function adminAddProduct(product) {
+  product = product.trim();
+  if (!product) return;
+  try {
+    await api("/api/admin/products", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...adminHdr() },
+      body: JSON.stringify({ product }),
+    });
+    toast("Препарат добавлен", "ok");
+    await loadMeta();
+    await renderAdminPanel();
+  } catch (e) { toast(e.message, "err"); }
+}
+
+async function adminDeleteProduct(product) {
+  if (!confirm(`Удалить препарат ${product}?`)) return;
+  try {
+    await api(`/api/admin/products/${encodeURIComponent(product)}`, { method: "DELETE", headers: adminHdr() });
+    toast("Препарат удалён", "ok");
+    await loadMeta();
+    await renderAdminPanel();
+  } catch (e) { toast(e.message, "err"); }
+}
+
+function renderAdminCharacteristics() {
+  const body = $("#admin-content");
+  body.innerHTML = "";
+  const nameInput = el("input", { type: "text", placeholder: "например вязкость" });
+  const list = el("div", { id: "admin-characteristics-list", class: "product-list" });
+  const renderList = () => {
+    list.innerHTML = "";
+    const items = state.meta.characteristics || [];
+    if (items.length === 0) {
+      list.append(el("div", { class: "admin-empty" }, "Характеристики ещё не добавлены."));
+      return;
+    }
+    items.forEach((name) => list.append(el("div", { class: "product-row" },
+      el("span", {}, name),
+      el("button", { class: "btn del small", onclick: () => adminDeleteCharacteristic(name) }, "Удалить"))));
+  };
+  body.append(el("div", { class: "admin-panel-head" },
+    el("div", {},
+      el("h2", {}, "Характеристики"),
+      el("p", {}, "Настройте общий список характеристик для всех анализов."))));
+  body.append(el("form", {
+    class: "admin-inline-form",
+    onsubmit: async (e) => {
+      e.preventDefault();
+      await adminAddCharacteristic(nameInput.value);
+      nameInput.value = "";
+    },
+  }, nameInput, el("button", { class: "btn primary", type: "submit" }, "Добавить")));
+  body.append(list);
+  renderList();
+}
+
+async function adminAddCharacteristic(name) {
+  name = name.trim();
+  if (!name) return;
+  try {
+    await api("/api/admin/characteristics", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...adminHdr() },
+      body: JSON.stringify({ name }),
+    });
+    toast("Характеристика добавлена", "ok");
+    await loadMeta();
+    renderAdminCharacteristics();
+  } catch (e) { toast(e.message, "err"); }
+}
+
+async function adminDeleteCharacteristic(name) {
+  if (!confirm(`Удалить характеристику «${name}»?`)) return;
+  const params = new URLSearchParams({ name });
+  try {
+    await api(`/api/admin/characteristics?${params.toString()}`, { method: "DELETE", headers: adminHdr() });
+    toast("Характеристика удалена", "ok");
+    await loadMeta();
+    renderAdminCharacteristics();
+  } catch (e) { toast(e.message, "err"); }
+}
+
+function renderCharacteristicsView() {
+  const wrap = $("#characteristics-options");
+  if (!wrap) return;
+  wrap.innerHTML = "";
+  const options = state.meta.characteristics || [];
+  if (options.length === 0) {
+    wrap.append(el("div", { class: "admin-empty" }, "Справочник характеристик пуст."));
+    return;
+  }
+  options.forEach((name) => {
+    wrap.append(el("div", { class: "parameter-card readonly" },
+      el("span", { class: "parameter-name" }, name)));
+  });
+}
+
+function renderAdminMaintenance() {
+  const body = $("#admin-content");
+  body.innerHTML = "";
+  body.append(el("div", { class: "admin-panel-head" },
+    el("div", {},
+      el("h2", {}, "Обслуживание"),
+      el("p", {}, "Действия для резервных копий и реестра."))));
+  body.append(el("div", { class: "admin-actions-grid" },
+    el("button", { class: "btn ghost", onclick: backup }, "💾 Создать бэкап"),
+    el("button", { class: "btn ghost", onclick: rebuildRegistry }, "↻ Пересобрать реестр"),
+    el("button", { class: "btn primary", onclick: openModal }, "＋ Новый анализ")));
+}
+
+function manufacturerControls(current) {
   const acripol = state.meta.origin_acripol;
   const isAcripol = current === acripol;
   const isExternal = current && !isAcripol;
@@ -485,11 +820,11 @@ function originControls(current) {
     el("option", current === "" ? { value: "", selected: "" } : { value: "" }, "—"),
     el("option", isAcripol ? { value: acripol, selected: "" } : { value: acripol }, acripol),
     el("option", isExternal ? { value: "__ext__", selected: "" } : { value: "__ext__" }, "стороннее"));
-  const src = el("input", { type: "text", value: isExternal ? current : "", placeholder: "название стороннего источника" });
-  const srcLabel = el("label", { class: isExternal ? "" : "hidden" }, "Источник", src);
+  const src = el("input", { type: "text", value: isExternal ? current : "", placeholder: "название производителя" });
+  const srcLabel = el("label", { class: isExternal ? "" : "hidden" }, "Сторонний производитель", src);
   sel.addEventListener("change", () => srcLabel.classList.toggle("hidden", sel.value !== "__ext__"));
   const read = () => (sel.value === "__ext__" ? src.value.trim() : sel.value);
-  return { selLabel: el("label", {}, "Происхождение", sel), srcLabel, read };
+  return { selLabel: el("label", {}, "Производитель", sel), srcLabel, read };
 }
 
 function renderStatusSelect() {
@@ -503,6 +838,27 @@ function renderCreateProduct() {
   sel.innerHTML = "";
   sel.append(el("option", { value: "" }, "—"));
   state.meta.products.forEach((p) => sel.append(el("option", { value: p }, p)));
+  sel.onchange = () => renderCreateCharacteristicSelect();
+}
+
+function renderCreateSource() {
+  const sel = $("#create-source");
+  sel.innerHTML = "";
+  sel.append(el("option", { value: "" }, "—"));
+  state.meta.sources.forEach((s) => sel.append(el("option", { value: s }, s)));
+}
+
+function renderCreateCharacteristicSelect() {
+  const current = $("#create-characteristic-select");
+  if (!current) return;
+  const next = characteristicSelect(readCharacteristicsFrom("#create-characteristics-list").map((ch) => ch.name), "create-characteristic-select");
+  current.replaceWith(next);
+}
+
+function renderCreateCharacteristicsList() {
+  const list = $("#create-characteristics-list");
+  if (!list) return;
+  if (!list.querySelector(".characteristic-row")) ensureCharacteristicsEmpty(list);
 }
 
 function setupCreateOrigin() {
@@ -520,22 +876,29 @@ function createOriginValue() {
 }
 
 function openModal() {
+  resetCreateForm();
+  setView("new");
+}
+
+function resetCreateForm() {
   $("#create-form").reset();
   $("#create-origin-source-wrap").classList.add("hidden");
-  $("#modal").classList.remove("hidden");
+  $("#create-characteristics-list").innerHTML = "";
+  ensureCharacteristicsEmpty($("#create-characteristics-list"));
+  renderCreateCharacteristicSelect();
 }
-function closeModal() { $("#modal").classList.add("hidden"); }
 
 async function submitCreate(e) {
   e.preventDefault();
   const payload = Object.fromEntries(new FormData(e.target).entries());
   payload.origin = createOriginValue();
+  payload.characteristics = readCharacteristicsFrom("#create-characteristics-list");
   try {
     const a = await api("/api/analyses", {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
     });
     toast(`Создан анализ ${a.id}`, "ok");
-    closeModal();
+    resetCreateForm();
     state.selectedId = a.id;
     await loadList();
     openCard(a.id);
@@ -544,8 +907,9 @@ async function submitCreate(e) {
 
 async function rebuildRegistry() {
   if (!confirm("Пересобрать registry.xlsx из карточек card.json?")) return;
+  if (!(await ensureAdmin())) return;
   try {
-    const r = await api("/api/registry/rebuild", { method: "POST" });
+    const r = await api("/api/registry/rebuild", { method: "POST", headers: adminHdr() });
     toast(`Реестр пересобран: ${r.rebuilt} строк`, "ok");
   } catch (e) { toast(e.message, "err"); }
 }
@@ -557,11 +921,29 @@ async function openRegistry() {
   } catch (e) { toast(e.message, "err"); }
 }
 
-async function backup() {
+async function downloadBackup() {
+  if (!(await ensureAdmin())) return;
   try {
-    await api("/api/backup", { method: "POST" });
-    toast("Резервная копия создана в backups/", "ok");
+    const res = await fetch("/api/backup", { method: "POST", headers: adminHdr() });
+    if (!res.ok) {
+      const ct = res.headers.get("content-type") || "";
+      const body = ct.includes("json") ? await res.json() : await res.text();
+      throw new Error((body && body.error) || `Ошибка ${res.status}`);
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const link = el("a", { href: url, download: backupFilename(res.headers.get("content-disposition") || "") });
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast("Бэкап скачивается", "ok");
   } catch (e) { toast(e.message, "err"); }
+}
+
+function backupFilename(disposition) {
+  const match = /filename="?([^";]+)"?/i.exec(disposition);
+  return match ? match[1] : "labspectra-backup.zip";
 }
 
 function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
@@ -569,16 +951,29 @@ function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTi
 function init() {
   document.querySelectorAll(".seg").forEach((b) => b.addEventListener("click", () => setView(b.dataset.view)));
   $("#btn-new").addEventListener("click", openModal);
-  $("#modal-close").addEventListener("click", closeModal);
-  $("#create-cancel").addEventListener("click", closeModal);
+  $("#create-cancel").addEventListener("click", resetCreateForm);
   $("#create-form").addEventListener("submit", submitCreate);
+  $("#create-characteristic-add").addEventListener("click", () => {
+    addCharacteristicRow("#create-characteristics-list", $("#create-characteristic-select").value, "");
+    renderCreateCharacteristicSelect();
+  });
   $("#btn-rebuild").addEventListener("click", rebuildRegistry);
   $("#btn-open-xlsx").addEventListener("click", openRegistry);
-  $("#btn-backup").addEventListener("click", backup);
+  $("#btn-backup").addEventListener("click", downloadBackup);
   $("#btn-admin").addEventListener("click", enterAdmin);
-  $("#admin-close").addEventListener("click", closeAdmin);
-  $("#admin-modal").addEventListener("click", (e) => { if (e.target.id === "admin-modal") closeAdmin(); });
-  $("#modal").addEventListener("click", (e) => { if (e.target.id === "modal") closeModal(); });
+  $("#admin-exit").addEventListener("click", exitAdmin);
+  $("#admin-login-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    resolveAdminLogin($("#admin-password").value);
+  });
+  $("#admin-login-cancel").addEventListener("click", () => resolveAdminLogin(""));
+  $("#admin-login").addEventListener("click", (e) => {
+    if (e.target.id === "admin-login") resolveAdminLogin("");
+  });
+  document.querySelectorAll(".admin-tab").forEach((b) => b.addEventListener("click", async () => {
+    state.adminTab = b.dataset.adminTab;
+    await renderAdminPanel();
+  }));
   $("#lightbox").addEventListener("click", closeLightbox);
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeLightbox(); });
 

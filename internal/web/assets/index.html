@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>LabSpectra — учёт анализов</title>
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css?v=20260622-characteristics-global" />
 </head>
 <body>
   <header class="topbar">
@@ -12,7 +12,7 @@
       <span class="logo">🧪</span>
       <div>
         <div class="brand-title">LabSpectra</div>
-        <div class="brand-sub">учёт ИК-спектров, фото и отчётов</div>
+        <div class="brand-sub">учёт ИК-спектров и фото</div>
       </div>
     </div>
     <div class="topbar-actions">
@@ -28,6 +28,7 @@
     <div class="view-toggle">
       <button class="seg active" data-view="table">▦ Таблица</button>
       <button class="seg" data-view="cards">🗂 Карточка</button>
+      <button class="seg" data-view="characteristics">▤ Характеристики</button>
     </div>
     <input id="search" type="search" placeholder="Поиск: номер опыта, продукт, партия…" autocomplete="off" />
     <div id="status-filters" class="filters"></div>
@@ -52,12 +53,14 @@
             <th data-key="analysis_date">Дата анализа</th>
             <th data-key="synthesis_date">Дата синтеза</th>
             <th data-key="product">Продукт</th>
-            <th data-key="origin">Происхождение</th>
+            <th data-key="origin">Производитель</th>
+            <th data-key="source">Происхождение</th>
             <th data-key="batch">Партия</th>
             <th data-key="sample_name">Дополнительно</th>
             <th data-key="short_result">Результат анализа</th>
             <th data-key="status">Статус</th>
-            <th>Спектры</th>
+            <th data-key="operator">Оператор</th>
+            <th data-key="characteristics">Характеристики</th>
             <th>Фото</th>
             <th data-key="comment">Комментарий</th>
           </tr>
@@ -79,50 +82,108 @@
         </section>
       </div>
     </section>
+
+    <section id="view-characteristics" class="view hidden">
+      <div class="characteristics-page">
+        <div class="characteristics-page-head">
+          <div>
+            <h1>Характеристики</h1>
+            <p>Общий справочник параметров для заполнения анализов.</p>
+          </div>
+        </div>
+        <div class="characteristics-workspace">
+          <section class="section">
+            <h3>Параметры</h3>
+            <div id="characteristics-options" class="parameter-grid"></div>
+          </section>
+          <section class="section">
+            <h3>Как заполнять анализ</h3>
+            <div class="hint-block">
+              В форме «Новый анализ» снизу добавьте нужные характеристики из этого списка и впишите значения.
+            </div>
+          </section>
+        </div>
+      </div>
+    </section>
+
+    <section id="view-new" class="view hidden">
+      <div class="new-page">
+        <div class="new-page-head">
+          <div>
+            <h1>Новый анализ</h1>
+            <p>Заполните карточку и добавьте характеристики выбранного продукта.</p>
+          </div>
+        </div>
+        <form id="create-form" class="form new-form">
+          <div class="section">
+            <h3>Данные анализа</h3>
+            <div class="grid2">
+              <label>Дата анализа<input type="date" name="analysis_date" /></label>
+              <label>Дата синтеза<input type="date" name="synthesis_date" /></label>
+              <label>Продукт<select name="product" id="create-product"></select></label>
+              <label>Статус<select name="status" id="create-status"></select></label>
+              <label>Производитель<select id="create-origin"></select></label>
+              <label id="create-origin-source-wrap" class="hidden">Сторонний производитель<input type="text" id="create-origin-source" placeholder="название производителя" /></label>
+              <label>Происхождение<select name="source" id="create-source"></select></label>
+              <label>Партия<input type="text" name="batch" placeholder="123" /></label>
+              <label>Оператор<input type="text" name="operator" placeholder="Фамилия" /></label>
+            </div>
+            <label>Дополнительно<input type="text" name="sample_name" placeholder="доп. сведения" /></label>
+            <label>Описание<textarea name="description" rows="2"></textarea></label>
+            <label>Краткий результат<input type="text" name="short_result" placeholder="Соответствует" /></label>
+            <label>Комментарий<textarea name="comment" rows="2"></textarea></label>
+          </div>
+          <div class="section">
+            <h3>Характеристики</h3>
+            <div class="characteristic-picker">
+              <select id="create-characteristic-select"></select>
+              <button type="button" class="btn ghost" id="create-characteristic-add">Добавить</button>
+            </div>
+            <div id="create-characteristics-list" class="characteristics-list"></div>
+          </div>
+          <div class="form-actions">
+            <button type="button" class="btn ghost" id="create-cancel">Очистить</button>
+            <button type="submit" class="btn primary">Создать анализ</button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <section id="view-admin" class="view hidden">
+      <div class="admin-page">
+        <div class="admin-page-head">
+          <div>
+            <h1>Управление</h1>
+            <p>Заявки, препараты и служебные действия.</p>
+          </div>
+          <button id="admin-exit" class="btn ghost">Выйти</button>
+        </div>
+        <div class="admin-tabs">
+          <button class="admin-tab active" data-admin-tab="requests">Заявки</button>
+          <button class="admin-tab" data-admin-tab="products">Препараты</button>
+          <button class="admin-tab" data-admin-tab="characteristics">Характеристики</button>
+          <button class="admin-tab" data-admin-tab="maintenance">Обслуживание</button>
+        </div>
+        <div id="admin-content" class="admin-content"></div>
+      </div>
+    </section>
   </main>
-
-  <div id="modal" class="modal-backdrop hidden">
-    <div class="modal">
-      <div class="modal-head">
-        <h2>Новый анализ</h2>
-        <button class="icon-btn" id="modal-close">✕</button>
-      </div>
-      <form id="create-form" class="form">
-        <div class="grid2">
-          <label>Дата анализа<input type="date" name="analysis_date" /></label>
-          <label>Дата синтеза<input type="date" name="synthesis_date" /></label>
-          <label>Продукт<select name="product" id="create-product"></select></label>
-          <label>Статус<select name="status" id="create-status"></select></label>
-          <label>Происхождение<select id="create-origin"></select></label>
-          <label id="create-origin-source-wrap" class="hidden">Источник<input type="text" id="create-origin-source" placeholder="название стороннего источника" /></label>
-          <label>Партия<input type="text" name="batch" placeholder="123" /></label>
-        </div>
-        <label>Дополнительно<input type="text" name="sample_name" placeholder="доп. сведения" /></label>
-        <label>Описание<textarea name="description" rows="2"></textarea></label>
-        <label>Краткий результат<input type="text" name="short_result" placeholder="Соответствует" /></label>
-        <label>Комментарий<textarea name="comment" rows="2"></textarea></label>
-        <div class="form-actions">
-          <button type="button" class="btn ghost" id="create-cancel">Отмена</button>
-          <button type="submit" class="btn primary">Создать анализ</button>
-        </div>
-      </form>
-    </div>
-  </div>
-
-  <div id="admin-modal" class="modal-backdrop hidden">
-    <div class="modal">
-      <div class="modal-head">
-        <h2>Недавно удалённые</h2>
-        <button class="icon-btn" id="admin-close">✕</button>
-      </div>
-      <div id="admin-body" class="admin-body"></div>
-    </div>
-  </div>
 
   <div id="lightbox" class="lightbox hidden"><img id="lightbox-img" alt="" /></div>
 
+  <div id="admin-login" class="login-backdrop hidden">
+    <form id="admin-login-form" class="login-dialog">
+      <h2>Вход в управление</h2>
+      <label>Пароль администратора<input id="admin-password" type="password" autocomplete="current-password" /></label>
+      <div class="form-actions">
+        <button type="button" id="admin-login-cancel" class="btn ghost">Отмена</button>
+        <button type="submit" class="btn primary">Войти</button>
+      </div>
+    </form>
+  </div>
+
   <div id="toasts" class="toasts"></div>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=20260622-characteristics-global"></script>
 </body>
 </html>

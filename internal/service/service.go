@@ -1,6 +1,7 @@
 package service
 
 import (
+	"crypto/subtle"
 	"fmt"
 	"io"
 	"log/slog"
@@ -19,28 +20,48 @@ import (
 )
 
 type Service struct {
-	fs            *storage.FileStore
-	reg           *storage.Registry
-	ix            *index.Index
-	lock          *storage.Lock
-	logFile       *os.File
-	adminPassword string
-	mu            sync.Mutex
+	fs              *storage.FileStore
+	reg             *storage.Registry
+	ix              *index.Index
+	lock            *storage.Lock
+	logFile         *os.File
+	adminPassword   string
+	products        []string
+	characteristics []string
+	mu              sync.Mutex
 }
 
-func getenvDefault(key, def string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
+func adminPasswordFromEnv() (string, error) {
+	if v := os.Getenv("ADMIN_PASSWORD"); v != "" {
+		return v, nil
 	}
-	return def
+	if os.Getenv("PORT") != "" {
+		return "", fmt.Errorf("ADMIN_PASSWORD должен быть задан для публичного запуска")
+	}
+	return "123", nil
 }
 
 func (s *Service) CheckAdmin(pw string) bool {
-	return pw != "" && pw == s.adminPassword
+	if pw == "" || s.adminPassword == "" {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(pw), []byte(s.adminPassword)) == 1
 }
 
 func New(root string) (*Service, error) {
+	adminPassword, err := adminPasswordFromEnv()
+	if err != nil {
+		return nil, err
+	}
 	fs, err := storage.NewFileStore(root)
+	if err != nil {
+		return nil, err
+	}
+	products, err := storage.ReadProducts(fs.Paths.Products(), domain.Products())
+	if err != nil {
+		return nil, err
+	}
+	characteristics, err := storage.ReadCharacteristics(fs.Paths.Characteristics(), domain.CharacteristicOptions())
 	if err != nil {
 		return nil, err
 	}
@@ -56,12 +77,14 @@ func New(root string) (*Service, error) {
 		return nil, err
 	}
 	s := &Service{
-		fs:            fs,
-		reg:           storage.NewRegistry(fs.Paths),
-		ix:            index.New(),
-		lock:          lock,
-		logFile:       logFile,
-		adminPassword: getenvDefault("ADMIN_PASSWORD", "123"),
+		fs:              fs,
+		reg:             storage.NewRegistry(fs.Paths),
+		ix:              index.New(),
+		lock:            lock,
+		logFile:         logFile,
+		adminPassword:   adminPassword,
+		products:        products,
+		characteristics: characteristics,
 	}
 
 	cards, broken, err := fs.ReadAllCards()
@@ -94,17 +117,177 @@ func (s *Service) Close() error {
 
 func (s *Service) Root() string { return s.fs.Paths.Root }
 
+func (s *Service) Products() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.products...)
+}
+
+func (s *Service) AddProduct(product string) ([]string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	product = strings.TrimSpace(product)
+	if product == "" {
+		return nil, fmt.Errorf("продукт не должен быть пустым")
+	}
+	if s.validProductLocked(product) {
+		return append([]string(nil), s.products...), nil
+	}
+	s.products = append(s.products, product)
+	if err := storage.WriteProducts(s.fs.Paths.Products(), s.products); err != nil {
+		return nil, err
+	}
+	slog.Info("добавлен продукт", "product", product)
+	return append([]string(nil), s.products...), nil
+}
+
+func (s *Service) DeleteProduct(product string) ([]string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	product = strings.TrimSpace(product)
+	if product == "" {
+		return nil, fmt.Errorf("продукт не указан")
+	}
+	for _, a := range s.ix.All() {
+		if a.Product == product {
+			return nil, fmt.Errorf("продукт %q используется в анализе %s", product, a.ID)
+		}
+	}
+	idx := -1
+	for i, p := range s.products {
+		if p == product {
+			idx = i
+			break
+		}
+	}
+	if idx == -1 {
+		return nil, fmt.Errorf("продукт не найден: %q", product)
+	}
+	s.products = append(s.products[:idx], s.products[idx+1:]...)
+	if err := storage.WriteProducts(s.fs.Paths.Products(), s.products); err != nil {
+		return nil, err
+	}
+	slog.Info("удалён продукт", "product", product)
+	return append([]string(nil), s.products...), nil
+}
+
+func (s *Service) validProductLocked(product string) bool {
+	if product == "" {
+		return true
+	}
+	for _, p := range s.products {
+		if p == product {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Service) Characteristics() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.characteristics...)
+}
+
+func (s *Service) AddCharacteristic(name string) ([]string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, fmt.Errorf("характеристика не должна быть пустой")
+	}
+	for _, x := range s.characteristics {
+		if x == name {
+			return append([]string(nil), s.characteristics...), nil
+		}
+	}
+	s.characteristics = append(s.characteristics, name)
+	if err := storage.WriteCharacteristics(s.fs.Paths.Characteristics(), s.characteristics); err != nil {
+		return nil, err
+	}
+	slog.Info("добавлена характеристика", "name", name)
+	return append([]string(nil), s.characteristics...), nil
+}
+
+func (s *Service) DeleteCharacteristic(name string) ([]string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, fmt.Errorf("характеристика должна быть указана")
+	}
+	for _, a := range s.ix.All() {
+		for _, ch := range a.Characteristics {
+			if ch.Name == name {
+				return nil, fmt.Errorf("характеристика %q используется в анализе %s", name, a.ID)
+			}
+		}
+	}
+	idx := -1
+	for i, x := range s.characteristics {
+		if x == name {
+			idx = i
+			break
+		}
+	}
+	if idx == -1 {
+		return nil, fmt.Errorf("характеристика не найдена: %q", name)
+	}
+	s.characteristics = append(s.characteristics[:idx], s.characteristics[idx+1:]...)
+	if err := storage.WriteCharacteristics(s.fs.Paths.Characteristics(), s.characteristics); err != nil {
+		return nil, err
+	}
+	slog.Info("удалена характеристика", "name", name)
+	return append([]string(nil), s.characteristics...), nil
+}
+
+func (s *Service) normalizeCharacteristicsLocked(product string, in []domain.Characteristic) ([]domain.Characteristic, error) {
+	out := make([]domain.Characteristic, 0, len(in))
+	seen := map[string]bool{}
+	for _, ch := range in {
+		name := strings.TrimSpace(ch.Name)
+		value := strings.TrimSpace(ch.Value)
+		if name == "" && value == "" {
+			continue
+		}
+		if name == "" {
+			return nil, fmt.Errorf("характеристика не указана")
+		}
+		if !s.validCharacteristicLocked(name) {
+			return nil, fmt.Errorf("характеристика %q не настроена", name)
+		}
+		if seen[name] {
+			return nil, fmt.Errorf("характеристика %q уже добавлена", name)
+		}
+		seen[name] = true
+		out = append(out, domain.Characteristic{Name: name, Value: value})
+	}
+	return out, nil
+}
+
+func (s *Service) validCharacteristicLocked(name string) bool {
+	for _, x := range s.characteristics {
+		if x == name {
+			return true
+		}
+	}
+	return false
+}
+
 type CreateInput struct {
-	AnalysisDate  string `json:"analysis_date"`
-	SynthesisDate string `json:"synthesis_date"`
-	Product       string `json:"product"`
-	Origin        string `json:"origin"`
-	Batch         string `json:"batch"`
-	SampleName    string `json:"sample_name"`
-	Description   string `json:"description"`
-	ShortResult   string `json:"short_result"`
-	Status        string `json:"status"`
-	Comment       string `json:"comment"`
+	AnalysisDate    string                  `json:"analysis_date"`
+	SynthesisDate   string                  `json:"synthesis_date"`
+	Product         string                  `json:"product"`
+	Origin          string                  `json:"origin"`
+	Source          string                  `json:"source"`
+	Batch           string                  `json:"batch"`
+	Operator        string                  `json:"operator"`
+	SampleName      string                  `json:"sample_name"`
+	Description     string                  `json:"description"`
+	ShortResult     string                  `json:"short_result"`
+	Status          string                  `json:"status"`
+	Comment         string                  `json:"comment"`
+	Characteristics []domain.Characteristic `json:"characteristics"`
 }
 
 func (s *Service) Create(in CreateInput) (*domain.Analysis, error) {
@@ -127,27 +310,38 @@ func (s *Service) Create(in CreateInput) (*domain.Analysis, error) {
 		status = string(domain.StatusNew)
 	}
 	product := strings.TrimSpace(in.Product)
-	if !domain.ValidProduct(product) {
+	if !s.validProductLocked(product) {
 		return nil, fmt.Errorf("неизвестный продукт: %q", product)
+	}
+	source := strings.TrimSpace(in.Source)
+	if !domain.ValidSource(source) {
+		return nil, fmt.Errorf("неизвестное происхождение: %q", source)
+	}
+	characteristics, err := s.normalizeCharacteristicsLocked(product, in.Characteristics)
+	if err != nil {
+		return nil, err
 	}
 
 	a := &domain.Analysis{
-		SchemaVersion: domain.SchemaVersion,
-		ID:            id,
-		AnalysisDate:  date,
-		SynthesisDate: strings.TrimSpace(in.SynthesisDate),
-		Product:       product,
-		Origin:        strings.TrimSpace(in.Origin),
-		Batch:         strings.TrimSpace(in.Batch),
-		SampleName:    strings.TrimSpace(in.SampleName),
-		Description:   in.Description,
-		ShortResult:   in.ShortResult,
-		Status:        status,
-		Comment:       in.Comment,
-		Attachments:   domain.Attachments{Photos: []string{}, Spectra: []string{}},
-		CreatedAt:     now.Format(time.RFC3339),
-		UpdatedAt:     now.Format(time.RFC3339),
-		Committed:     false,
+		SchemaVersion:   domain.SchemaVersion,
+		ID:              id,
+		AnalysisDate:    date,
+		SynthesisDate:   strings.TrimSpace(in.SynthesisDate),
+		Product:         product,
+		Origin:          strings.TrimSpace(in.Origin),
+		Source:          source,
+		Batch:           strings.TrimSpace(in.Batch),
+		Operator:        strings.TrimSpace(in.Operator),
+		SampleName:      strings.TrimSpace(in.SampleName),
+		Description:     in.Description,
+		ShortResult:     in.ShortResult,
+		Status:          status,
+		Comment:         in.Comment,
+		Characteristics: characteristics,
+		Attachments:     domain.Attachments{Photos: []string{}, Spectra: []string{}},
+		CreatedAt:       now.Format(time.RFC3339),
+		UpdatedAt:       now.Format(time.RFC3339),
+		Committed:       false,
 	}
 
 	if err := s.fs.CreateSampleDirs(id); err != nil {
@@ -170,7 +364,7 @@ func (s *Service) Create(in CreateInput) (*domain.Analysis, error) {
 
 func (s *Service) Get(id string) (*domain.Analysis, error) {
 	a, ok := s.ix.Get(id)
-	if !ok {
+	if !ok || a.Deleted {
 		return nil, fmt.Errorf("анализ не найден: %s", id)
 	}
 	return a, nil
@@ -259,16 +453,19 @@ func inRange(d, from, to string) bool {
 }
 
 type UpdateInput struct {
-	AnalysisDate  string `json:"analysis_date"`
-	SynthesisDate string `json:"synthesis_date"`
-	Product       string `json:"product"`
-	Origin        string `json:"origin"`
-	Batch         string `json:"batch"`
-	SampleName    string `json:"sample_name"`
-	Description   string `json:"description"`
-	ShortResult   string `json:"short_result"`
-	Status        string `json:"status"`
-	Comment       string `json:"comment"`
+	AnalysisDate    string                  `json:"analysis_date"`
+	SynthesisDate   string                  `json:"synthesis_date"`
+	Product         string                  `json:"product"`
+	Origin          string                  `json:"origin"`
+	Source          string                  `json:"source"`
+	Batch           string                  `json:"batch"`
+	Operator        string                  `json:"operator"`
+	SampleName      string                  `json:"sample_name"`
+	Description     string                  `json:"description"`
+	ShortResult     string                  `json:"short_result"`
+	Status          string                  `json:"status"`
+	Comment         string                  `json:"comment"`
+	Characteristics []domain.Characteristic `json:"characteristics"`
 }
 
 func (s *Service) Update(id string, in UpdateInput) (*domain.Analysis, error) {
@@ -279,21 +476,35 @@ func (s *Service) Update(id string, in UpdateInput) (*domain.Analysis, error) {
 	if !ok {
 		return nil, fmt.Errorf("анализ не найден: %s", id)
 	}
+	if cur.Deleted {
+		return nil, fmt.Errorf("анализ ожидает подтверждения удаления: %s", id)
+	}
 	product := strings.TrimSpace(in.Product)
-	if !domain.ValidProduct(product) {
+	if !s.validProductLocked(product) {
 		return nil, fmt.Errorf("неизвестный продукт: %q", product)
+	}
+	source := strings.TrimSpace(in.Source)
+	if !domain.ValidSource(source) {
+		return nil, fmt.Errorf("неизвестное происхождение: %q", source)
+	}
+	characteristics, err := s.normalizeCharacteristicsLocked(product, in.Characteristics)
+	if err != nil {
+		return nil, err
 	}
 	a := cur.Clone()
 	a.AnalysisDate = strings.TrimSpace(in.AnalysisDate)
 	a.SynthesisDate = strings.TrimSpace(in.SynthesisDate)
 	a.Product = product
 	a.Origin = strings.TrimSpace(in.Origin)
+	a.Source = source
 	a.Batch = strings.TrimSpace(in.Batch)
+	a.Operator = strings.TrimSpace(in.Operator)
 	a.SampleName = strings.TrimSpace(in.SampleName)
 	a.Description = in.Description
 	a.ShortResult = in.ShortResult
 	a.Status = strings.TrimSpace(in.Status)
 	a.Comment = in.Comment
+	a.Characteristics = characteristics
 	a.UpdatedAt = time.Now().Format(time.RFC3339)
 
 	if err := s.persist(a); err != nil {
@@ -310,6 +521,9 @@ func (s *Service) AddAttachment(id string, kind domain.Kind, origName string, sr
 	cur, ok := s.ix.Get(id)
 	if !ok {
 		return nil, fmt.Errorf("анализ не найден: %s", id)
+	}
+	if cur.Deleted {
+		return nil, fmt.Errorf("анализ ожидает подтверждения удаления: %s", id)
 	}
 	rel, err := s.fs.SaveAttachment(id, kind, origName, src)
 	if err != nil {
@@ -334,6 +548,9 @@ func (s *Service) RemoveAttachment(id string, kind domain.Kind, rel string) (*do
 	cur, ok := s.ix.Get(id)
 	if !ok {
 		return nil, fmt.Errorf("анализ не найден: %s", id)
+	}
+	if cur.Deleted {
+		return nil, fmt.Errorf("анализ ожидает подтверждения удаления: %s", id)
 	}
 	a := cur.Clone()
 	list := a.Attachments.For(kind)
@@ -361,8 +578,12 @@ func (s *Service) Purge(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if _, ok := s.ix.Get(id); !ok {
+	cur, ok := s.ix.Get(id)
+	if !ok {
 		return fmt.Errorf("анализ не найден: %s", id)
+	}
+	if !cur.Deleted {
+		return fmt.Errorf("сначала отправьте анализ на удаление: %s", id)
 	}
 	if err := s.fs.TrashSample(id); err != nil {
 		return err
@@ -386,6 +607,10 @@ func (s *Service) persist(a *domain.Analysis) error {
 func (s *Service) AttachmentFile(id, rel string) (string, error) {
 	if !domain.ValidID(id) {
 		return "", fmt.Errorf("некорректный ID")
+	}
+	a, ok := s.ix.Get(id)
+	if !ok || a.Deleted {
+		return "", fmt.Errorf("анализ не найден: %s", id)
 	}
 	if rel == "" || strings.ContainsRune(rel, ':') {
 		return "", fmt.Errorf("недопустимый путь")
@@ -424,12 +649,15 @@ func (s *Service) RebuildRegistry() (int, error) {
 	if err := s.rebuildRegistryLocked(); err != nil {
 		return 0, err
 	}
-	return s.ix.Len(), nil
+	return len(activeOf(s.ix.All())), nil
 }
 
 func (s *Service) Backup() (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.rebuildRegistryLocked(); err != nil {
+		return "", err
+	}
 	return storage.Backup(s.fs.Paths)
 }
 
